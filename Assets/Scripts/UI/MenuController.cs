@@ -64,12 +64,16 @@ namespace EverySingleDay.UI
         }
 
         // --- Button handlers (wire these to UI Buttons) ---
-        public void OnResume() => _gm?.Resume();
-        public void OnRestart() => _gm?.ReloadLevel();
-        public void OnNextLevel() => _gm?.LoadNextLevel();
-        public void OnMainMenu() => _gm?.RestartGame();
+        public void OnResume() { Click(); _gm?.Resume(); }
+        public void OnRestart() { Click(); _gm?.ReloadLevel(); }
+        public void OnNextLevel() { Click(); _gm?.LoadNextLevel(); }
+        public void OnMainMenu() { Click(); _gm?.ReturnToMenu(); }
+
+        private static void Click() => Systems.AudioManager.Play(Systems.SfxLibrary.UiClick);
+
         public void OnQuit()
         {
+            Click();
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else

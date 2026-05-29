@@ -64,18 +64,21 @@ namespace EverySingleDay.Player
         private void HandleJump()
         {
             SetTrigger(JumpTrigger);
-            Systems.AudioManager.Play(jumpClip);
+            Systems.AudioManager.Play(jumpClip != null ? jumpClip : Systems.SfxLibrary.Jump);
         }
 
         private void HandleDoubleJump()
         {
             SetTrigger(JumpTrigger);
-            Systems.AudioManager.Play(doubleJumpClip != null ? doubleJumpClip : jumpClip);
+            var clip = doubleJumpClip != null ? doubleJumpClip
+                     : jumpClip != null ? jumpClip
+                     : Systems.SfxLibrary.DoubleJump;
+            Systems.AudioManager.Play(clip);
         }
 
         private void HandleLand()
         {
-            Systems.AudioManager.Play(landClip);
+            Systems.AudioManager.Play(landClip != null ? landClip : Systems.SfxLibrary.Land);
         }
 
         // --- safe animator setters (no-op if parameter absent) ---

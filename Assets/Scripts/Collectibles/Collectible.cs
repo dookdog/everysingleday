@@ -75,7 +75,10 @@ namespace EverySingleDay.Collectibles
                     break;
             }
 
-            Systems.AudioManager.Play(collectClip);
+            var clip = collectClip != null ? collectClip
+                     : type == CollectibleType.Gem ? Systems.SfxLibrary.Gem
+                     : Systems.SfxLibrary.Coin;
+            Systems.AudioManager.Play(clip);
             if (collectEffect != null)
                 Instantiate(collectEffect, transform.position, Quaternion.identity);
 

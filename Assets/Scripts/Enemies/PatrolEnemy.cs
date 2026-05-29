@@ -117,7 +117,8 @@ namespace EverySingleDay.Enemies
         private void Die()
         {
             _dead = true;
-            Systems.AudioManager.Play(stompClip);
+            Systems.AudioManager.Play(stompClip != null ? stompClip : Systems.SfxLibrary.Stomp);
+            CameraSystem.CameraShake.Trigger(0.1f, 0.12f);
             Systems.GameManager.Instance?.AddScore(scoreValue);
 
             if (deathEffect != null)

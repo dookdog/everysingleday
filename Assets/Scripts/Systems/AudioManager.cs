@@ -33,11 +33,20 @@ namespace EverySingleDay.Systems
             EnsureSources();
         }
 
+        [Tooltip("If no backgroundMusic clip is assigned, play the synthesized loop.")]
+        public bool useSynthesizedMusicFallback = true;
+
         private void Start()
         {
-            if (backgroundMusic != null && musicSource != null)
+            if (musicSource == null) return;
+
+            var clip = backgroundMusic;
+            if (clip == null && useSynthesizedMusicFallback)
+                clip = SfxLibrary.Music;
+
+            if (clip != null)
             {
-                musicSource.clip = backgroundMusic;
+                musicSource.clip = clip;
                 musicSource.loop = true;
                 musicSource.volume = musicVolume;
                 musicSource.Play();

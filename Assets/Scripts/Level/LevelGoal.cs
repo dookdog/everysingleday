@@ -22,7 +22,7 @@ namespace EverySingleDay.Level
             _reached = true;
 
             other.GetComponent<Player.PlayerController>()?.SetControlsLocked(true);
-            Systems.AudioManager.Play(goalClip);
+            Systems.AudioManager.Play(goalClip != null ? goalClip : Systems.SfxLibrary.Goal);
             if (goalEffect != null)
                 Instantiate(goalEffect, transform.position, Quaternion.identity);
 

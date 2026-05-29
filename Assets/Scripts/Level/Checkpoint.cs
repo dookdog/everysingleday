@@ -43,7 +43,7 @@ namespace EverySingleDay.Level
             IsActivated = true;
             if (flagRenderer != null && activeSprite != null)
                 flagRenderer.sprite = activeSprite;
-            Systems.AudioManager.Play(activateClip);
+            Systems.AudioManager.Play(activateClip != null ? activateClip : Systems.SfxLibrary.Checkpoint);
             if (activateEffect != null)
                 Instantiate(activateEffect, transform.position, Quaternion.identity);
         }

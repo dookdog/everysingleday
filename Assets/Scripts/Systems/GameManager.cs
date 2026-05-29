@@ -129,6 +129,7 @@ namespace EverySingleDay.Systems
         private IEnumerator GameOverRoutine()
         {
             yield return new WaitForSeconds(respawnDelay);
+            AudioManager.Play(SfxLibrary.GameOver);
             SetState(GameState.GameOver);
         }
 
@@ -167,6 +168,21 @@ namespace EverySingleDay.Systems
         {
             Time.timeScale = 1f;
             SceneManager.LoadScene(0);
+        }
+
+        [Header("Menu")]
+        [Tooltip("Scene name of the title screen, loaded by ReturnToMenu.")]
+        public string mainMenuScene = "MainMenu";
+
+        /// <summary>Return to the title screen (by name, falling back to scene 0).</summary>
+        public void ReturnToMenu()
+        {
+            Time.timeScale = 1f;
+            if (!string.IsNullOrEmpty(mainMenuScene) &&
+                Application.CanStreamedLevelBeLoaded(mainMenuScene))
+                SceneManager.LoadScene(mainMenuScene);
+            else
+                SceneManager.LoadScene(0);
         }
 
         // --- pause ---

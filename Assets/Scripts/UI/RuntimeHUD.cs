@@ -142,10 +142,18 @@ namespace EverySingleDay.UI
         {
             // Lightweight restart/continue handling for the bootstrap build.
             if (_gm == null) return;
+
+            bool ended = _gm.State == Systems.GameState.GameOver ||
+                         _gm.State == Systems.GameState.LevelComplete;
+
             if (_gm.State == Systems.GameState.GameOver && Input.GetKeyDown(KeyCode.R))
-                _gm.RestartGame();
+                _gm.ReloadLevel();
             if (_gm.State == Systems.GameState.LevelComplete && Input.GetKeyDown(KeyCode.R))
                 _gm.LoadNextLevel();
+
+            // Return to the title screen from any end state.
+            if (ended && Input.GetKeyDown(KeyCode.M))
+                _gm.ReturnToMenu();
         }
 
         private void UpdateScore(int v) => _scoreText.text = $"SCORE  {v:n0}";
@@ -164,10 +172,10 @@ namespace EverySingleDay.UI
             switch (state)
             {
                 case Systems.GameState.LevelComplete:
-                    Show("LEVEL COMPLETE!", "Press R for the next challenge");
+                    Show("LEVEL COMPLETE!", "R: next challenge      M: main menu");
                     break;
                 case Systems.GameState.GameOver:
-                    Show("GAME OVER", "Press R to try again");
+                    Show("GAME OVER", "R: try again      M: main menu");
                     break;
                 case Systems.GameState.Paused:
                     Show("PAUSED", "Press Esc to resume");

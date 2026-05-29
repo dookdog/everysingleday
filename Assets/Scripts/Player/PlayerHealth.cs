@@ -18,6 +18,8 @@ namespace EverySingleDay.Player
         [Header("Feedback")]
         public SpriteRenderer spriteToFlash;
         public float flashInterval = 0.08f;
+        public AudioClip hurtClip;
+        public AudioClip deathClip;
 
         public int CurrentHealth { get; private set; }
         public bool IsInvulnerable { get; private set; }
@@ -63,6 +65,9 @@ namespace EverySingleDay.Player
                 return;
             }
 
+            Systems.AudioManager.Play(hurtClip != null ? hurtClip : Systems.SfxLibrary.Hurt);
+            CameraSystem.CameraShake.Trigger(0.18f, 0.25f);
+
             // Knockback away from the damage source.
             float dir = Mathf.Sign(transform.position.x - sourcePosition.x);
             if (dir == 0) dir = 1;
@@ -90,6 +95,7 @@ namespace EverySingleDay.Player
         private void Die()
         {
             IsDead = true;
+            Systems.AudioManager.Play(deathClip != null ? deathClip : Systems.SfxLibrary.Death);
             OnDied?.Invoke();
             _controller.SetControlsLocked(true);
 

@@ -54,7 +54,7 @@ namespace EverySingleDay.Enemies
             Vector2 dir = (_player.position - firePoint.position).normalized;
             var proj = Instantiate(projectilePrefab, firePoint.position, Quaternion.identity);
             proj.Launch(dir);
-            Systems.AudioManager.Play(fireClip);
+            Systems.AudioManager.Play(fireClip != null ? fireClip : Systems.SfxLibrary.Shoot);
         }
 
         private void OnDrawGizmosSelected()
