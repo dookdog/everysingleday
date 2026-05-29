@@ -1,5 +1,35 @@
 # Every Single Day — a Unity 2D Platformer
 
+## Procedurally generated, theme-directed levels
+
+Every play builds a **completely different level** from a random seed: a new
+layout, different enemy placement, a different **objective**, and a different
+**aesthetic + feel** — all guaranteed playable (gaps and steps are clamped to
+what the player can actually jump). The same seed always reproduces the same
+level, so designs are shareable/repeatable.
+
+The *look and feel* is directed by **themes** (`LevelTheme` /
+`ThemeLibrary`): palette, backdrop shape, platform density, enemy mix, hazard
+rate, physics feel (gravity/speed/jump), music key & tempo, and which
+objectives are likely. Six themes ship today (Verdant Hills, Amber Dunes,
+Crystal Caverns, Frozen Reaches, Ember Depths, Neon Void).
+
+**Authoring new themes from reference art:** the intended pipeline is to
+generate aesthetic reference imagery in an external tool, then distill its
+palette/mood/motifs into a new entry in `ThemeLibrary.cs`. No art files,
+API keys or network are used at runtime — themes are plain data in code.
+
+**Objectives** vary per run: reach the exit, collect all gems, collect a
+gem quota, defeat all enemies, or survive a timer (the exit "arms" once the
+objective is met). Progress shows in the HUD and a title card announces each
+level's theme, mood and objective.
+
+Key knobs: `GameBootstrap.seed` (0 = random each play; set non-zero to replay
+a design) and `GameBootstrap.forceThemeIndex` (-1 = pick from seed).
+
+---
+
+
 A complete, polished 2D platformer built in Unity. It ships with the
 "game-feel" fundamentals that make a platformer feel *good* to play —
 coyote time, jump buffering, variable jump height, double jump, wall

@@ -145,6 +145,13 @@ namespace EverySingleDay.Systems
         public void LoadNextLevel()
         {
             Time.timeScale = 1f;
+
+            // Procedural progression: advance to a brand-new generated design
+            // (new seed => new layout, enemies, objective and theme) by reloading
+            // this scene with a fresh seed queued for the bootstrap.
+            GameBootstrap.NextSeed = new System.Random().Next(1, int.MaxValue);
+            GameBootstrap.NextThemeIndex = -1; // let the new seed pick the theme
+
             if (!string.IsNullOrEmpty(nextLevelScene))
             {
                 SceneManager.LoadScene(nextLevelScene);
@@ -155,7 +162,7 @@ namespace EverySingleDay.Systems
             if (next < SceneManager.sceneCountInBuildSettings)
                 SceneManager.LoadScene(next);
             else
-                ReloadLevel(); // loop back if no further level exists
+                ReloadLevel(); // regenerate in-place when there's no further scene
         }
 
         public void ReloadLevel()

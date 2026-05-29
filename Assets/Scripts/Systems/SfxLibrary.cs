@@ -228,5 +228,52 @@ namespace EverySingleDay.Systems
 
             return ToClip("music_loop", b);
         }
+
+        /// <summary>
+        /// Builds a music loop tuned to a theme's mood: root note (darkness),
+        /// mode (0 minor / 1 major / 2 pentatonic) and tempo. Used so each
+        /// generated level sounds distinct without any audio files.
+        /// </summary>
+        public static AudioClip BuildThemedMusic(int rootNote, int mode, float tempo)
+        {
+            // Scale degrees (semitone offsets) per mode.
+            int[] minor = { 0, 3, 7, 10, 12, 15 };
+            int[] major = { 0, 4, 7, 11, 12, 16 };
+            int[] penta = { 0, 3, 5, 7, 10, 12 };
+            int[] scale = mode == 0 ? minor : mode == 2 ? penta : major;
+
+            // Four chords built off scale degrees give a simple progression.
+            int[] roots = mode == 0 ? new[] { 0, -2, 3, 5 }   // i  bVII III  v-ish
+                        : mode == 2 ? new[] { 0, 5, 7, 5 }
+                                    : new[] { 0, 5, -3, 2 };   // I  IV  vi   ii
+
+            float beat = 60f / Mathf.Max(60f, tempo);
+            float chordLen = beat * 4f;          // one bar per chord
+            float total = chordLen * 4f;
+            var b = Buffer(total);
+
+            int[] arpPattern = { 0, 2, 3, 2, 4, 2, 3, 1 };
+            float step = chordLen / arpPattern.Length;
+
+            for (int c = 0; c < 4; c++)
+            {
+                float chordStart = c * chordLen;
+                int chordRoot = rootNote + roots[c];
+
+                // Bass: chord root, one octave down, sustained.
+                AddTone(b, chordStart, chordLen, Hz(chordRoot - 12), Hz(chordRoot - 12),
+                    0.13f, mode == 0 ? 1 : 0, attack: 0.04f, decay: 0.5f);
+
+                // Arpeggio across the scale.
+                for (int s = 0; s < arpPattern.Length; s++)
+                {
+                    int note = chordRoot + scale[arpPattern[s] % scale.Length];
+                    AddTone(b, chordStart + s * step, step * 0.95f, Hz(note), Hz(note),
+                        0.095f, 2, attack: 0.01f, decay: 2.5f);
+                }
+            }
+
+            return ToClip("music_themed", b);
+        }
     }
 }

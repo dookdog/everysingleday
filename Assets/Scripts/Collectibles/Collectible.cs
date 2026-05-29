@@ -66,6 +66,8 @@ namespace EverySingleDay.Collectibles
                     Systems.GameManager.Instance?.AddScore(value);
                     if (type == CollectibleType.Coin)
                         Systems.GameManager.Instance?.AddCoin();
+                    else
+                        Systems.ObjectiveManager.Instance?.ReportGemCollected();
                     break;
                 case CollectibleType.Health:
                     player.GetComponent<Player.PlayerHealth>()?.Heal(value);

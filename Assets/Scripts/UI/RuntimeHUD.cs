@@ -15,6 +15,7 @@ namespace EverySingleDay.UI
         private Text _coinsText;
         private Text _livesText;
         private Text _healthText;
+        private Text _objectiveText;
         private Text _centerBanner;
         private GameObject _bannerPanel;
         private Text _bannerSub;
@@ -53,6 +54,11 @@ namespace EverySingleDay.UI
             _healthText = MakeText(canvas.transform, "Health", new Vector2(1, 1),
                 new Vector2(-40, -40), TextAnchor.UpperRight, 40);
             _healthText.color = new Color(1f, 0.4f, 0.4f);
+
+            // Objective progress, centred at the top.
+            _objectiveText = MakeText(canvas.transform, "Objective", new Vector2(0.5f, 1),
+                new Vector2(0, -44), TextAnchor.UpperCenter, 38);
+            _objectiveText.color = new Color(0.85f, 0.95f, 1f);
 
             var hint = MakeText(canvas.transform, "Hint", new Vector2(0.5f, 0),
                 new Vector2(0, 30), TextAnchor.LowerCenter, 24);
@@ -123,6 +129,13 @@ namespace EverySingleDay.UI
                 _health.OnHealthChanged += UpdateHealth;
                 UpdateHealth(_health.CurrentHealth, _health.maxHealth);
             }
+
+            var om = Systems.ObjectiveManager.Instance;
+            if (om != null)
+            {
+                om.OnObjectiveChanged += UpdateObjective;
+                UpdateObjective();
+            }
         }
 
         private void OnDestroy()
@@ -136,6 +149,16 @@ namespace EverySingleDay.UI
             }
             if (_health != null)
                 _health.OnHealthChanged -= UpdateHealth;
+            var om = Systems.ObjectiveManager.Instance;
+            if (om != null)
+                om.OnObjectiveChanged -= UpdateObjective;
+        }
+
+        private void UpdateObjective()
+        {
+            if (_objectiveText == null) return;
+            var om = Systems.ObjectiveManager.Instance;
+            _objectiveText.text = om != null ? om.ProgressText() : "";
         }
 
         private void Update()

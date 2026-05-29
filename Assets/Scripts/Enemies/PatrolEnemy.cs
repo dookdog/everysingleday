@@ -120,6 +120,7 @@ namespace EverySingleDay.Enemies
             Systems.AudioManager.Play(stompClip != null ? stompClip : Systems.SfxLibrary.Stomp);
             CameraSystem.CameraShake.Trigger(0.1f, 0.12f);
             Systems.GameManager.Instance?.AddScore(scoreValue);
+            Systems.ObjectiveManager.Instance?.ReportEnemyDefeated();
 
             if (deathEffect != null)
                 Instantiate(deathEffect, transform.position, Quaternion.identity);

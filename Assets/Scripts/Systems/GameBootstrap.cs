@@ -9,57 +9,55 @@ using EverySingleDay.UI;
 namespace EverySingleDay.Systems
 {
     /// <summary>
-    /// One-stop scene builder. Drop this single component on an empty GameObject
-    /// in an empty scene, press Play, and a complete platformer level — player,
-    /// camera, HUD, enemies, coins, hazards, moving platforms, checkpoints and a
-    /// goal — is constructed procedurally. No prefabs, art or scene authoring
-    /// required, so the game runs the moment the project is opened.
+    /// Builds a complete, playable level at runtime from a seed + theme. Rather
+    /// than a hand-authored layout, it asks <see cref="LevelGenerator"/> for a
+    /// fresh <see cref="LevelData"/> and renders it: player, camera, HUD, themed
+    /// backdrop, platforms, enemies, pickups, hazards, checkpoint and goal.
     ///
-    /// Everything it builds uses the reusable gameplay components in this
-    /// project, so it doubles as living documentation of how to wire them up.
+    /// Every new play uses a different seed (unless one is pinned), so the
+    /// design — layout, enemies, objective and overall feel — changes each game.
+    /// The aesthetic comes from the chosen <see cref="LevelTheme"/>; themes are
+    /// authored in <see cref="ThemeLibrary"/> from reference imagery, so the look
+    /// is something you direct while the structure is generated.
+    ///
+    /// No prefabs, art or network required — sprites are code-drawn primitives.
     /// </summary>
     public class GameBootstrap : MonoBehaviour
     {
         [Header("Build Options")]
         public bool buildOnStart = true;
 
-        [Tooltip("If true and no GameBootstrap is present in the loaded scene, " +
-                 "one is created automatically so the game runs from any empty scene.")]
+        [Tooltip("0 = random seed each play. Set non-zero to replay one design.")]
+        public int seed = 0;
+
+        [Tooltip("-1 = pick a theme from the seed. Otherwise force a theme index.")]
+        public int forceThemeIndex = -1;
+
         public static bool AutoSpawnIfMissing = true;
 
-        /// <summary>
-        /// Safety net: if you press Play in an empty scene (or one without a
-        /// Bootstrap object), spawn one so the full game still builds. Skipped
-        /// when a GameBootstrap already exists, to avoid building twice.
-        /// </summary>
+        // Cross-load handoff: the menu / next-level flow can request the next
+        // seed and theme so progression feels intentional.
+        public static int NextSeed = 0;
+        public static int NextThemeIndex = -1;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoSpawn()
         {
             if (!AutoSpawnIfMissing) return;
+            var sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (sceneName.ToLowerInvariant().Contains("menu")) return; // menu handles itself
             if (FindObjectOfType<GameBootstrap>() != null) return;
             var go = new GameObject("Bootstrap (auto)");
             go.AddComponent<GameBootstrap>();
         }
 
-        // Ground occupies user layer 8 so the player's ground/wall probes never
-        // detect the player itself. Layer 8 always exists (even if unnamed).
+        // Ground occupies user layer 8 so the player's probes never detect itself.
         private const int GroundLayer = 8;
         private LayerMask GroundMask => 1 << GroundLayer;
 
-        // Palette.
-        private static readonly Color SkyColor = new Color(0.36f, 0.62f, 0.86f);
-        private static readonly Color GroundColor = new Color(0.27f, 0.20f, 0.16f);
-        private static readonly Color GrassColor = new Color(0.32f, 0.65f, 0.30f);
-        private static readonly Color PlayerColor = new Color(0.95f, 0.85f, 0.30f);
-        private static readonly Color EnemyColor = new Color(0.85f, 0.27f, 0.27f);
-        private static readonly Color CoinColor = new Color(1f, 0.82f, 0.18f);
-        private static readonly Color GemColor = new Color(0.40f, 0.85f, 0.95f);
-        private static readonly Color SpikeColor = new Color(0.75f, 0.78f, 0.82f);
-        private static readonly Color PlatformColor = new Color(0.55f, 0.40f, 0.70f);
-        private static readonly Color CheckpointColor = new Color(0.95f, 0.55f, 0.20f);
-        private static readonly Color GoalColor = new Color(0.30f, 0.90f, 0.45f);
-
         private PhysicsMaterial2D _frictionless;
+        private LevelTheme _theme;
+        private LevelData _level;
 
         private void Start()
         {
@@ -68,30 +66,51 @@ namespace EverySingleDay.Systems
 
         public void Build()
         {
+            // Resolve seed + theme (honouring any cross-load handoff).
+            int resolvedSeed = seed != 0 ? seed
+                             : NextSeed != 0 ? NextSeed
+                             : Random.Range(1, int.MaxValue);
+            NextSeed = 0;
+
+            int themeIdx = forceThemeIndex >= 0 ? forceThemeIndex
+                         : NextThemeIndex >= 0 ? NextThemeIndex
+                         : -1;
+            NextThemeIndex = -1;
+
+            _theme = themeIdx >= 0 ? ThemeLibrary.Get(themeIdx)
+                                   : ThemeLibrary.PickForSeed(resolvedSeed);
+
+            _level = LevelGenerator.Generate(resolvedSeed, _theme);
+
             _frictionless = new PhysicsMaterial2D("Slippery") { friction = 0f, bounciness = 0f };
 
             BuildSystems();
-            var player = BuildPlayer(new Vector3(0f, 2f, 0f));
+            var player = BuildPlayer(_level.playerStart);
             BuildCamera(player.transform);
-            BuildLevel();
+            BuildBackdrop();
+            RenderLevel();
+
             RuntimeHUD.Create();
+            ShowIntroCard();
         }
 
         // ---------------------------------------------------------------- systems
         private void BuildSystems()
         {
             if (GameManager.Instance == null)
-            {
-                var gmGo = new GameObject("GameManager");
-                gmGo.AddComponent<GameManager>();
-            }
-            if (AudioManager.Instance == null)
-            {
-                var amGo = new GameObject("AudioManager");
-                amGo.AddComponent<AudioManager>();
-            }
+                new GameObject("GameManager").AddComponent<GameManager>();
 
-            // EventSystem so UI buttons would work if added later.
+            if (AudioManager.Instance == null)
+                new GameObject("AudioManager").AddComponent<AudioManager>();
+            // Themed music for this level.
+            AudioManager.PlayMusic(SfxLibrary.BuildThemedMusic(
+                _theme.musicRootNote, _theme.musicMode, _theme.musicTempo));
+
+            // Objective tracker, configured for the generated objective.
+            var omGo = new GameObject("ObjectiveManager");
+            var om = omGo.AddComponent<ObjectiveManager>();
+            om.Configure(_level);
+
             if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
             {
                 var es = new GameObject("EventSystem");
@@ -107,12 +126,11 @@ namespace EverySingleDay.Systems
             go.transform.position = position;
 
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.SolidSprite(PlayerColor);
+            sr.sprite = PrimitiveFactory.SolidSprite(_theme.player);
             sr.drawMode = SpriteDrawMode.Sliced;
             sr.size = new Vector2(1f, 1.4f);
             sr.sortingOrder = 10;
 
-            // A friendly face so it reads as a character.
             AddDecal(go.transform, new Vector2(0.22f, 0.22f), new Vector2(0.18f, 0.2f), Color.black, 11);
             AddDecal(go.transform, new Vector2(-0.22f, 0.22f), new Vector2(0.18f, 0.2f), Color.black, 11);
 
@@ -124,7 +142,6 @@ namespace EverySingleDay.Systems
             col.direction = CapsuleDirection2D.Vertical;
             col.sharedMaterial = _frictionless;
 
-            // Probes.
             var groundCheck = new GameObject("GroundCheck").transform;
             groundCheck.SetParent(go.transform, false);
             groundCheck.localPosition = new Vector3(0f, -0.72f, 0f);
@@ -137,9 +154,16 @@ namespace EverySingleDay.Systems
             controller.groundLayer = GroundMask;
             controller.groundCheck = groundCheck;
             controller.wallCheck = wallCheck;
+            // Apply the theme's physics feel.
+            controller.moveSpeed *= _theme.playerSpeedScale;
+            controller.jumpHeight *= _theme.jumpScale;
 
             var health = go.AddComponent<PlayerHealth>();
             health.spriteToFlash = sr;
+            health.SetRespawnPoint(position);
+
+            // Theme gravity: scale the world gravity once (affects all bodies).
+            Physics2D.gravity = new Vector2(0f, -30f * _theme.gravityScale);
 
             return go;
         }
@@ -159,8 +183,8 @@ namespace EverySingleDay.Systems
         // ----------------------------------------------------------------- camera
         private void BuildCamera(Transform target)
         {
-            GameObject camGo;
             Camera cam = Camera.main;
+            GameObject camGo;
             if (cam == null)
             {
                 camGo = new GameObject("Main Camera") { tag = "MainCamera" };
@@ -170,164 +194,144 @@ namespace EverySingleDay.Systems
 
             cam.orthographic = true;
             cam.orthographicSize = 6.5f;
-            cam.backgroundColor = SkyColor;
+            cam.backgroundColor = _theme.skyBottom;
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.transform.position = new Vector3(target.position.x, target.position.y, -10f);
 
             var follow = camGo.GetComponent<CameraFollow>() ?? camGo.AddComponent<CameraFollow>();
             follow.target = target;
             follow.offset = new Vector2(0f, 1f);
+            follow.useBounds = true;
+            follow.minBounds = _level.worldMin;
+            follow.maxBounds = _level.worldMax;
 
             if (camGo.GetComponent<CameraShake>() == null)
                 camGo.AddComponent<CameraShake>();
+
+            // A simple two-band sky using a big background quad behind everything.
+            BuildSky(cam);
+        }
+
+        private void BuildSky(Camera cam)
+        {
+            var go = new GameObject("Sky");
+            go.transform.SetParent(cam.transform, false);
+            go.transform.localPosition = new Vector3(0f, 0f, 20f);
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = PrimitiveFactory.SolidSprite(_theme.skyTop);
+            sr.drawMode = SpriteDrawMode.Sliced;
+            sr.size = new Vector2(80f, 50f);
+            sr.color = _theme.skyTop;
+            sr.sortingOrder = -100;
         }
 
         // ------------------------------------------------------------------ level
-        private void BuildLevel()
+        private void RenderLevel()
         {
-            // --- ground platforms: (centerX, topY, width) ---
-            Platform(4f, 0f, 14f);
-            Platform(20f, 0f, 8f);
-            Platform(30f, 1.5f, 6f);
-            Platform(50f, 0f, 9f);
-            Platform(60f, 2.5f, 5f);
-            Platform(70f, 0f, 8f);
-            Platform(80f, 3.5f, 6f);
-            Platform(92f, 0f, 12f);
+            foreach (var p in _level.platforms)
+            {
+                if (p.moving) MovingBridge(p);
+                else Platform(p);
+            }
+            foreach (var e in _level.enemies)
+            {
+                if (e.turret) Turret(e.pos);
+                else Enemy(e.pos, e.alt);
+            }
+            foreach (var pk in _level.pickups) Pickup(pk);
+            foreach (var hz in _level.hazards) SpikeRow(hz.pos, hz.count);
 
-            // --- floating bonus blocks ---
-            Platform(15f, 3.5f, 2f);
-            Platform(45f, 3f, 2f);
-
-            // --- moving platform bridging the big gap (x 36 -> 44 at y ~1.5) ---
-            MovingBridge(new Vector3(36f, 1.5f, 0f), new Vector2(8f, 0f));
-
-            // --- coins: a few inviting arcs ---
-            CoinArc(new Vector2(11f, 1.2f), 4, 0.8f);
-            CoinArc(new Vector2(15f, 4.5f), 1, 0f);   // reward on the high block
-            CoinArc(new Vector2(28f, 2.7f), 3, 0.8f);
-            CoinArc(new Vector2(40f, 3.5f), 3, 0.8f, true);  // gems over the moving gap
-            CoinArc(new Vector2(64f, 2.5f), 3, 0.8f);
-            CoinArc(new Vector2(80f, 5.0f), 4, 0.7f, true);  // gem stash up the stairs
-
-            // --- enemies patrolling the platforms ---
-            Enemy(new Vector3(20f, 1f, 0f));
-            Enemy(new Vector3(50f, 1f, 0f));
-            Enemy(new Vector3(70f, 1f, 0f));
-            Enemy(new Vector3(92f, 1f, 0f));
-
-            // --- a turret guarding the staircase ---
-            Turret(new Vector3(86f, 5f, 0f));
-
-            // --- spikes to dodge ---
-            SpikeRow(new Vector3(56.5f, 0f, 0f), 3); // pit lip near the high platform
-            SpikeRow(new Vector3(74f, 0f, 0f), 3);
-
-            // --- checkpoint halfway ---
-            CheckpointFlag(new Vector3(50f, 1.2f, 0f));
-
-            // --- goal flag at the end ---
-            GoalFlag(new Vector3(96f, 1.5f, 0f));
-
-            // --- death plane below everything ---
-            DeathPlane(new Vector3(50f, -14f, 0f), 220f);
-
-            // --- decorative parallax hills in the far background ---
-            BuildBackdrop();
+            CheckpointFlag(_level.checkpointPos);
+            GoalFlag(_level.goalPos);
+            DeathPlane(new Vector3((_level.worldMin.x + _level.worldMax.x) / 2f,
+                _level.worldMin.y - 2f, 0f), (_level.worldMax.x - _level.worldMin.x) + 40f);
         }
 
-        private GameObject Platform(float centerX, float topY, float width)
+        private GameObject Platform(PlatformSpec p)
         {
             float height = 2f;
             var go = new GameObject("Platform");
             go.layer = GroundLayer;
-            go.transform.position = new Vector3(centerX, topY - height / 2f, 0f);
+            go.transform.position = new Vector3(p.centerX, p.topY - height / 2f, 0f);
 
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.SolidSprite(GroundColor);
+            sr.sprite = PrimitiveFactory.SolidSprite(_theme.ground);
             sr.drawMode = SpriteDrawMode.Tiled;
-            sr.size = new Vector2(width, height);
+            sr.size = new Vector2(p.width, height);
             sr.sortingOrder = 0;
 
             var col = go.AddComponent<BoxCollider2D>();
-            col.size = new Vector2(width, height);
+            col.size = new Vector2(p.width, height);
             col.sharedMaterial = _frictionless;
 
-            // Grass cap for a bit of polish.
-            var grass = new GameObject("Grass");
-            grass.transform.SetParent(go.transform, false);
-            grass.transform.localPosition = new Vector3(0f, height / 2f - 0.15f, 0f);
-            var gsr = grass.AddComponent<SpriteRenderer>();
-            gsr.sprite = PrimitiveFactory.SolidSprite(GrassColor);
+            var cap = new GameObject("Cap");
+            cap.transform.SetParent(go.transform, false);
+            cap.transform.localPosition = new Vector3(0f, height / 2f - 0.15f, 0f);
+            var gsr = cap.AddComponent<SpriteRenderer>();
+            gsr.sprite = PrimitiveFactory.SolidSprite(_theme.groundCap);
             gsr.drawMode = SpriteDrawMode.Tiled;
-            gsr.size = new Vector2(width, 0.3f);
+            gsr.size = new Vector2(p.width, 0.3f);
             gsr.sortingOrder = 1;
 
             return go;
         }
 
-        private void MovingBridge(Vector3 pos, Vector2 travel)
+        private void MovingBridge(PlatformSpec p)
         {
             var go = new GameObject("MovingPlatform");
             go.layer = GroundLayer;
-            go.transform.position = pos;
+            go.transform.position = new Vector3(p.centerX, p.topY - 0.25f, 0f);
 
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.SolidSprite(PlatformColor);
+            sr.sprite = PrimitiveFactory.SolidSprite(_theme.platform);
             sr.drawMode = SpriteDrawMode.Tiled;
-            sr.size = new Vector2(2.5f, 0.5f);
+            sr.size = new Vector2(Mathf.Max(2.5f, p.width), 0.5f);
             sr.sortingOrder = 2;
 
             var col = go.AddComponent<BoxCollider2D>();
-            col.size = new Vector2(2.5f, 0.5f);
+            col.size = new Vector2(Mathf.Max(2.5f, p.width), 0.5f);
             col.sharedMaterial = _frictionless;
 
             var mp = go.AddComponent<MovingPlatform>();
-            mp.waypoints = new[] { Vector2.zero, travel };
+            mp.waypoints = new[] { Vector2.zero, p.moveTravel };
             mp.speed = 2.2f;
             mp.waitTime = 0.5f;
         }
 
-        private void CoinArc(Vector2 start, int count, float spacing, bool gem = false)
+        private void Pickup(PickupSpec pk)
         {
-            for (int i = 0; i < count; i++)
-            {
-                var pos = new Vector2(start.x + i * spacing, start.y);
-                var go = new GameObject(gem ? "Gem" : "Coin");
-                go.transform.position = pos;
+            var go = new GameObject(pk.gem ? "Gem" : "Coin");
+            go.transform.position = pk.pos;
 
-                var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = PrimitiveFactory.CircleSprite(gem ? GemColor : CoinColor);
-                sr.drawMode = SpriteDrawMode.Sliced;
-                sr.size = gem ? new Vector2(0.6f, 0.6f) : new Vector2(0.5f, 0.5f);
-                sr.sortingOrder = 5;
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = PrimitiveFactory.CircleSprite(pk.gem ? _theme.gem : _theme.coin);
+            sr.drawMode = SpriteDrawMode.Sliced;
+            sr.size = pk.gem ? new Vector2(0.6f, 0.6f) : new Vector2(0.5f, 0.5f);
+            sr.sortingOrder = 5;
 
-                var col = go.AddComponent<CircleCollider2D>();
-                col.radius = 0.35f;
-                col.isTrigger = true;
+            var col = go.AddComponent<CircleCollider2D>();
+            col.radius = 0.35f;
+            col.isTrigger = true;
 
-                var c = go.AddComponent<Collectible>();
-                c.type = gem ? CollectibleType.Gem : CollectibleType.Coin;
-                c.value = gem ? 50 : 10;
-                c.bob = true;
-                if (gem) c.spin = false;
-            }
+            var c = go.AddComponent<Collectible>();
+            c.type = pk.gem ? CollectibleType.Gem : CollectibleType.Coin;
+            c.value = pk.gem ? 50 : 10;
+            c.bob = true;
         }
 
-        private void Enemy(Vector3 pos)
+        private void Enemy(Vector3 pos, bool alt)
         {
             var go = new GameObject("Enemy");
             go.transform.position = pos;
 
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.SolidSprite(EnemyColor);
+            sr.sprite = PrimitiveFactory.SolidSprite(alt ? _theme.enemyAlt : _theme.enemy);
             sr.drawMode = SpriteDrawMode.Sliced;
             sr.size = new Vector2(0.9f, 0.9f);
             sr.sortingOrder = 6;
 
-            // angry eyes
-            AddDecal(go.transform, new Vector2(0.2f, 0.1f), new Vector2(0.16f, 0.16f), Color.white, 7);
-            AddDecal(go.transform, new Vector2(-0.2f, 0.1f), new Vector2(0.16f, 0.16f), Color.white, 7);
+            AddDecal(go.transform, new Vector2(0.2f, 0.1f), new Vector2(0.16f, 0.16f), _theme.accent, 7);
+            AddDecal(go.transform, new Vector2(-0.2f, 0.1f), new Vector2(0.16f, 0.16f), _theme.accent, 7);
 
             var rb = go.AddComponent<Rigidbody2D>();
             rb.freezeRotation = true;
@@ -354,7 +358,7 @@ namespace EverySingleDay.Systems
             var go = new GameObject("Turret");
             go.transform.position = pos;
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.SolidSprite(new Color(0.4f, 0.4f, 0.45f));
+            sr.sprite = PrimitiveFactory.SolidSprite(_theme.enemyAlt);
             sr.drawMode = SpriteDrawMode.Sliced;
             sr.size = new Vector2(0.9f, 0.9f);
             sr.sortingOrder = 6;
@@ -372,11 +376,10 @@ namespace EverySingleDay.Systems
 
         private Projectile BuildProjectilePrefab()
         {
-            // An inactive template the turret clones at runtime.
             var go = new GameObject("ProjectileTemplate");
             go.SetActive(false);
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.CircleSprite(new Color(1f, 0.5f, 0.2f));
+            sr.sprite = PrimitiveFactory.CircleSprite(_theme.hazard);
             sr.drawMode = SpriteDrawMode.Sliced;
             sr.size = new Vector2(0.35f, 0.35f);
             sr.sortingOrder = 8;
@@ -399,7 +402,7 @@ namespace EverySingleDay.Systems
                 var go = new GameObject("Spike");
                 go.transform.position = basePos + new Vector3(i * 0.7f, 0.35f, 0f);
                 var sr = go.AddComponent<SpriteRenderer>();
-                sr.sprite = PrimitiveFactory.SpikeSprite(SpikeColor);
+                sr.sprite = PrimitiveFactory.SpikeSprite(_theme.hazard);
                 sr.drawMode = SpriteDrawMode.Sliced;
                 sr.size = new Vector2(0.7f, 0.7f);
                 sr.sortingOrder = 4;
@@ -409,8 +412,7 @@ namespace EverySingleDay.Systems
                 col.offset = new Vector2(0f, -0.1f);
                 col.isTrigger = true;
 
-                var hz = go.AddComponent<Hazard>();
-                hz.instantKill = true;
+                go.AddComponent<Hazard>().instantKill = true;
             }
         }
 
@@ -419,17 +421,14 @@ namespace EverySingleDay.Systems
             var go = new GameObject("Checkpoint");
             go.transform.position = pos;
 
-            // pole
             var pole = new GameObject("Pole");
             pole.transform.SetParent(go.transform, false);
-            pole.transform.localPosition = Vector3.zero;
             var psr = pole.AddComponent<SpriteRenderer>();
-            psr.sprite = PrimitiveFactory.SolidSprite(new Color(0.8f, 0.8f, 0.8f));
+            psr.sprite = PrimitiveFactory.SolidSprite(_theme.accent);
             psr.drawMode = SpriteDrawMode.Sliced;
             psr.size = new Vector2(0.12f, 2.2f);
             psr.sortingOrder = 3;
 
-            // flag
             var flag = new GameObject("Flag");
             flag.transform.SetParent(go.transform, false);
             flag.transform.localPosition = new Vector3(0.4f, 0.8f, 0f);
@@ -444,8 +443,8 @@ namespace EverySingleDay.Systems
 
             var cp = go.AddComponent<Checkpoint>();
             cp.flagRenderer = fsr;
-            cp.inactiveSprite = PrimitiveFactory.SolidSprite(new Color(0.6f, 0.6f, 0.6f));
-            cp.activeSprite = PrimitiveFactory.SolidSprite(CheckpointColor);
+            cp.inactiveSprite = PrimitiveFactory.SolidSprite(_theme.platform);
+            cp.activeSprite = PrimitiveFactory.SolidSprite(_theme.coin);
             fsr.sprite = cp.inactiveSprite;
         }
 
@@ -455,19 +454,19 @@ namespace EverySingleDay.Systems
             go.transform.position = pos;
 
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = PrimitiveFactory.SolidSprite(GoalColor);
+            sr.sprite = PrimitiveFactory.SolidSprite(_theme.goal);
             sr.drawMode = SpriteDrawMode.Sliced;
             sr.size = new Vector2(1.2f, 3f);
             sr.sortingOrder = 3;
 
-            // a little star on top
-            AddDecal(go.transform, new Vector2(0f, 1.8f), new Vector2(0.6f, 0.6f), Color.white, 4);
+            AddDecal(go.transform, new Vector2(0f, 1.8f), new Vector2(0.6f, 0.6f), _theme.accent, 4);
 
             var col = go.AddComponent<BoxCollider2D>();
             col.size = new Vector2(1.2f, 3f);
             col.isTrigger = true;
 
-            go.AddComponent<LevelGoal>();
+            var goal = go.AddComponent<LevelGoal>();
+            goal.bodyRenderer = sr;
         }
 
         private void DeathPlane(Vector3 center, float width)
@@ -480,31 +479,63 @@ namespace EverySingleDay.Systems
             go.AddComponent<DeathZone>();
         }
 
+        // --------------------------------------------------------------- backdrop
         private void BuildBackdrop()
         {
-            // Three layers of soft hills for depth (purely cosmetic).
-            Color[] tints =
+            var mover = new GameObject("Backdrop").AddComponent<Parallax>();
+            var layers = new System.Collections.Generic.List<Parallax.Layer>();
+
+            float span = _level.worldMax.x - _level.worldMin.x;
+            int perLayer = Mathf.Clamp(Mathf.CeilToInt(span / 8f) + 2, 6, 24);
+
+            for (int layer = 0; layer < _theme.backdropTints.Length; layer++)
             {
-                new Color(0.30f, 0.52f, 0.75f),
-                new Color(0.40f, 0.60f, 0.50f),
-                new Color(0.50f, 0.68f, 0.42f),
-            };
-            for (int layer = 0; layer < tints.Length; layer++)
-            {
-                for (int i = 0; i < 14; i++)
+                var layerRoot = new GameObject($"BGLayer{layer}");
+                layerRoot.transform.position = Vector3.zero;
+
+                for (int i = 0; i < perLayer; i++)
                 {
-                    var go = new GameObject("Hill");
-                    float x = i * 9f - 5f + layer * 3f;
-                    float y = -4f + layer * 1.2f;
+                    var go = new GameObject("Shape");
+                    go.transform.SetParent(layerRoot.transform, false);
+                    float x = _level.worldMin.x + i * 8f + layer * 3f;
+                    float y = _level.worldMin.y + 10f + layer * 1.2f;
                     go.transform.position = new Vector3(x, y, 5f + layer);
+
                     var sr = go.AddComponent<SpriteRenderer>();
-                    sr.sprite = PrimitiveFactory.CircleSprite(tints[layer]);
+                    sr.sprite = BackdropSprite(_theme.backdropShape, _theme.backdropTints[layer]);
                     sr.drawMode = SpriteDrawMode.Sliced;
                     float s = 10f - layer * 1.5f;
                     sr.size = new Vector2(s, s);
-                    sr.sortingOrder = -10 + layer;
+                    sr.sortingOrder = -50 + layer;
                 }
+
+                layers.Add(new Parallax.Layer
+                {
+                    transform = layerRoot.transform,
+                    parallaxFactor = 0.2f + layer * 0.2f
+                });
             }
+
+            mover.layers = layers.ToArray();
+            if (Camera.main != null) mover.cameraTransform = Camera.main.transform;
+        }
+
+        private Sprite BackdropSprite(int shape, Color color)
+        {
+            switch (shape)
+            {
+                case 1: return PrimitiveFactory.SpikeSprite(color);   // jagged peaks
+                case 2: return PrimitiveFactory.SolidSprite(color);   // floating blocks
+                default: return PrimitiveFactory.CircleSprite(color); // rounded hills
+            }
+        }
+
+        // --------------------------------------------------------------- intro UI
+        private void ShowIntroCard()
+        {
+            LevelIntroCard.Show(_theme.displayName, _theme.mood,
+                ObjectiveManager.Instance != null ? ObjectiveManager.Instance.Description : "Reach the exit",
+                _theme.accent, _theme.skyTop);
         }
     }
 }
