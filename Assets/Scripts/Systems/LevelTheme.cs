@@ -61,6 +61,24 @@ namespace EverySingleDay.Systems
         [Tooltip("0 = rounded hills, 1 = jagged peaks, 2 = floating blobs.")]
         public int backdropShape = 0;
 
+        [Header("Negative space / atmosphere")]
+        [Tooltip("Darkened screen-edge frame (0 = none, 1 = heavy). Focuses the " +
+                 "eye on the lit gameplay plane, Hollow Knight / Limbo style.")]
+        [Range(0f, 1f)] public float vignette = 0.35f;
+        [Tooltip("Colour distance fades toward — usually near-black. Distant " +
+                 "geometry dissolves into it so it needs no detail.")]
+        public Color fogColor = new Color(0.03f, 0.04f, 0.06f);
+        [Tooltip("How strongly the fog overlay tints the scene (0 = off).")]
+        [Range(0f, 1f)] public float fogDensity = 0f;
+        [Tooltip("Add a near, pure-silhouette foreground layer (black shapes " +
+                 "that frame the scene and read instantly at zero detail cost).")]
+        public bool foregroundSilhouettes = false;
+        [Tooltip("Colour of the foreground silhouette layer.")]
+        public Color silhouetteColor = new Color(0f, 0f, 0f, 1f);
+        [Tooltip("Give the player, pickups and goal a soft emissive halo so they " +
+                 "pop against the darkness. Cheap way to guide the eye.")]
+        public bool focalGlow = false;
+
         [Header("Layout feel")]
         [Tooltip("Approx. number of ground segments (level length).")]
         public Vector2Int segmentCountRange = new Vector2Int(10, 16);

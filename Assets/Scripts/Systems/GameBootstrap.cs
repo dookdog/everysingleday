@@ -90,6 +90,11 @@ namespace EverySingleDay.Systems
             BuildBackdrop();
             RenderLevel();
 
+            // Negative-space atmosphere layered on top of the built level.
+            if (_theme.foregroundSilhouettes && Camera.main != null)
+                ForegroundSilhouettes.Build(_theme, _level, Camera.main.transform);
+            AtmosphereController.Attach(Camera.main, _theme);
+
             RuntimeHUD.Create();
             ShowIntroCard();
         }
@@ -131,8 +136,17 @@ namespace EverySingleDay.Systems
             sr.size = new Vector2(1f, 1.4f);
             sr.sortingOrder = 10;
 
-            AddDecal(go.transform, new Vector2(0.22f, 0.22f), new Vector2(0.18f, 0.2f), Color.black, 11);
-            AddDecal(go.transform, new Vector2(-0.22f, 0.22f), new Vector2(0.18f, 0.2f), Color.black, 11);
+            // Eyes: only draw them when the player body is light enough for them
+            // to read. On a dark silhouette player, use lit accent "eyes" so the
+            // character still has a focal point in the dark.
+            float playerLuma = _theme.player.r * 0.3f + _theme.player.g * 0.6f + _theme.player.b * 0.1f;
+            Color eyeColor = playerLuma > 0.4f ? Color.black : _theme.accent;
+            AddDecal(go.transform, new Vector2(0.22f, 0.22f), new Vector2(0.18f, 0.2f), eyeColor, 11);
+            AddDecal(go.transform, new Vector2(-0.22f, 0.22f), new Vector2(0.18f, 0.2f), eyeColor, 11);
+
+            // Focal glow so the player reads against the darkness.
+            if (_theme.focalGlow)
+                AtmosphereController.AddFocalGlow(go.transform, _theme.accent, 3.2f);
 
             var rb = go.AddComponent<Rigidbody2D>();
             rb.gravityScale = 1f;
@@ -317,6 +331,11 @@ namespace EverySingleDay.Systems
             c.type = pk.gem ? CollectibleType.Gem : CollectibleType.Coin;
             c.value = pk.gem ? 50 : 10;
             c.bob = true;
+
+            // Pickups glow so they draw the eye across the dark negative space.
+            if (_theme.focalGlow)
+                AtmosphereController.AddFocalGlow(go.transform,
+                    pk.gem ? _theme.gem : _theme.coin, pk.gem ? 1.8f : 1.4f);
         }
 
         private void Enemy(Vector3 pos, bool alt)
@@ -467,6 +486,10 @@ namespace EverySingleDay.Systems
 
             var goal = go.AddComponent<LevelGoal>();
             goal.bodyRenderer = sr;
+
+            // The exit is the brightest thing in the level — a beacon in the dark.
+            if (_theme.focalGlow)
+                AtmosphereController.AddFocalGlow(go.transform, _theme.goal, 4.5f);
         }
 
         private void DeathPlane(Vector3 center, float width)
