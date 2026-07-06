@@ -23,6 +23,7 @@ namespace EverySingleDay.CameraSystem
 
         public static void Trigger(float duration = 0.15f, float magnitude = 0.2f)
         {
+            if (!Systems.GameSettings.ScreenShakeEnabled) return;
             if (Instance != null) Instance.Shake(duration, magnitude);
         }
 

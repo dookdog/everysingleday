@@ -31,6 +31,27 @@ namespace EverySingleDay.Systems
             DontDestroyOnLoad(gameObject);
 
             EnsureSources();
+            GameSettings.OnChanged += ApplySettings;
+        }
+
+        private void OnDestroy()
+        {
+            GameSettings.OnChanged -= ApplySettings;
+        }
+
+        /// <summary>React live to Options tickboxes (mute/unmute music).</summary>
+        private void ApplySettings()
+        {
+            if (musicSource == null) return;
+            if (GameSettings.MusicEnabled)
+            {
+                if (!musicSource.isPlaying && musicSource.clip != null)
+                    musicSource.Play();
+            }
+            else
+            {
+                musicSource.Stop();
+            }
         }
 
         [Tooltip("If no backgroundMusic clip is assigned, play the synthesized loop.")]
@@ -49,7 +70,8 @@ namespace EverySingleDay.Systems
                 musicSource.clip = clip;
                 musicSource.loop = true;
                 musicSource.volume = musicVolume;
-                musicSource.Play();
+                if (GameSettings.MusicEnabled)
+                    musicSource.Play();
             }
         }
 
@@ -71,6 +93,7 @@ namespace EverySingleDay.Systems
         public static void Play(AudioClip clip, float volumeScale = 1f)
         {
             if (clip == null) return;
+            if (!GameSettings.SfxEnabled) return;
             if (Instance != null && Instance.sfxSource != null)
                 Instance.sfxSource.PlayOneShot(clip, Instance.sfxVolume * volumeScale);
         }
@@ -81,7 +104,8 @@ namespace EverySingleDay.Systems
             Instance.musicSource.clip = clip;
             Instance.musicSource.loop = true;
             Instance.musicSource.volume = Instance.musicVolume;
-            Instance.musicSource.Play();
+            if (GameSettings.MusicEnabled)
+                Instance.musicSource.Play();
         }
 
         public void SetMusicVolume(float v)

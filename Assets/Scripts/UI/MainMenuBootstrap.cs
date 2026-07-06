@@ -161,8 +161,10 @@ namespace EverySingleDay.UI
             hs.text = high > 0 ? $"BEST  {high:n0}" : "";
 
             // Buttons.
-            MakeButton(canvas.transform, "PLAY", new Vector2(0, -40), AccentColor, OnPlay);
-            MakeButton(canvas.transform, "QUIT", new Vector2(0, -160),
+            MakeButton(canvas.transform, "PLAY", new Vector2(0, -20), AccentColor, OnPlay);
+            MakeButton(canvas.transform, "OPTIONS", new Vector2(0, -130),
+                new Color(0.35f, 0.45f, 0.75f), OnOptions);
+            MakeButton(canvas.transform, "QUIT", new Vector2(0, -240),
                 new Color(0.8f, 0.3f, 0.3f), OnQuit);
 
             // Controls hint.
@@ -170,6 +172,7 @@ namespace EverySingleDay.UI
                 new Vector2(0, 40), TextAnchor.LowerCenter, 26, new Color(1, 1, 1, 0.6f));
             hint.text = "Move: A/D or ←/→     Jump: Space (double-jump!)     " +
                         "Press ENTER to play";
+            hint.gameObject.SetActive(GameSettings.ShowHints);
 
             // Pulse the title a little.
             title.gameObject.AddComponent<UIPulse>();
@@ -180,6 +183,14 @@ namespace EverySingleDay.UI
             // Keyboard shortcut to start.
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
                 OnPlay();
+        }
+
+        private void OnOptions()
+        {
+            AudioManager.Play(SfxLibrary.UiClick);
+            var canvas = FindObjectOfType<Canvas>();
+            if (canvas != null)
+                OptionsWindow.Open(canvas.transform);
         }
 
         private void OnPlay()
