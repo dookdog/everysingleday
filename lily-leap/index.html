@@ -454,10 +454,41 @@ function syncMusic() {
 }
 document.addEventListener('visibilitychange', syncMusic);
 // iPhone only allows audio after a touch, so the first tap anywhere starts the title music
-// (a tap on the music button only unlocks audio; the button's own click decides on or off)
-const unlock = e => { ensureAudio(); if (!(e.target.closest && e.target.closest('#musicBtn'))) syncMusic(); };
-document.addEventListener('pointerdown', unlock, true);
-document.addEventListener('keydown', unlock, true);
+/* iPhone audio unlock.
+   - iOS only counts touchend/pointerup/click as a gesture that may start audio (not touchstart/pointerdown).
+   - Web Audio on iOS is muted by the ring/silent switch. navigator.audioSession 'playback' (iOS 17+)
+     opts out; on older iOS a playing silent <audio> element does the same. */
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let silentEl = null;
+function silentWav() {
+  const n = 2000, buf = new Uint8Array(44 + n), dv = new DataView(buf.buffer);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) buf[o + i] = s.charCodeAt(i); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+  w(36, 'data'); dv.setUint32(40, n, true); buf.fill(128, 44);
+  let s = ''; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+  return 'data:audio/wav;base64,' + btoa(s);
+}
+function unlockAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  ensureAudio();
+  if (!AC) return;
+  try { const b = AC.createBuffer(1, 1, 22050), s = AC.createBufferSource(); s.buffer = b; s.connect(AC.destination); s.start(0); } catch (e) {}
+  if (IS_IOS && !navigator.audioSession) {
+    try {
+      if (!silentEl) { silentEl = new Audio(silentWav()); silentEl.loop = true; silentEl.setAttribute('playsinline', ''); }
+      const pr = silentEl.play(); if (pr) pr.catch(() => {});
+    } catch (e) {}
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && silentEl) silentEl.pause(); });
+// a tap on the music or sound button only unlocks; that button's own click decides what happens
+const unlock = e => {
+  if (e.target.closest && e.target.closest('#musicBtn, #soundBtn')) return;
+  unlockAudio(); syncMusic();
+};
+for (const ev of ['pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(ev, unlock, true);
 function setMusic(on) {
   music.on = on;
   // SVG elements have no .hidden property, so toggle the attribute itself
@@ -544,12 +575,14 @@ $('againBtn').addEventListener('click', startGame);
 $('resumeBtn').addEventListener('click', () => { ensureAudio(); resume(); });
 $('quitBtn').addEventListener('click', () => { saveBest(); toTitle(); });
 $('pauseBtn').addEventListener('click', () => { if (state === 'play') pause(); });
-$('soundBtn').addEventListener('click', () => { ensureAudio(); setMuted(!muted); });
+$('soundBtn').addEventListener('click', () => { unlockAudio(); setMuted(!muted); syncMusic(); });
 $('musicBtn').addEventListener('click', () => {
-  ensureAudio();
-  // if music is switched on but the phone hadn't let it start yet, this tap starts it instead of turning it off
-  if (music.on && !music.playing) { if (muted) setMuted(false); syncMusic(); }
-  else { if (!music.on && muted) setMuted(false); setMusic(!music.on); }   // turning music on should be audible
+  // judge what the player can actually hear *before* unlocking: on iPhone the music can be "playing"
+  // inside an audio context the phone is still holding silent
+  const audible = music.on && music.playing && !muted && AC && AC.state === 'running';
+  unlockAudio();
+  if (music.on && !audible) { if (muted) setMuted(false); musicStop(); syncMusic(); }   // on but silent: make it play
+  else { if (!music.on && muted) setMuted(false); setMusic(!music.on); }
 });
 $('nextBtn').addEventListener('click', () => {
   ensureAudio(); hearts = Math.min(3, hearts + 1); loadLevel(L.n + 1); state = 'play'; show(null);
