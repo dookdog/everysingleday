@@ -24,6 +24,8 @@ body{font-family:var(--body);color:var(--ink);-webkit-user-select:none;user-sele
 .iconbtn{width:44px;height:44px;border-radius:50%;border:2px solid rgba(23,58,42,.2);background:rgba(255,248,236,.85);color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
 .iconbtn:focus-visible,.btn:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
 .iconbtn svg{width:22px;height:22px}
+.iconbtn.off{background:rgba(255,248,236,.5);color:rgba(23,58,42,.55)}
+#musicSlash{stroke-width:2.6}
 .overlay{position:fixed;inset:0;display:grid;place-items:center;z-index:10;background:rgba(18,52,64,.42);
   padding:max(14px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(14px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .card{background:var(--cream);border-radius:28px;padding:22px 24px 20px;max-width:430px;width:100%;max-height:100%;overflow:auto;text-align:center;box-shadow:0 10px 0 rgba(23,58,42,.18);touch-action:pan-y;box-sizing:border-box;display:flex;flex-direction:column;gap:12px}
@@ -289,7 +291,8 @@ function ensureAudio() {
       const nd = music.noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nd.length, 3);
     } catch (e) { AC = null; }
   }
-  if (AC && AC.state === 'suspended') AC.resume();
+  // iOS can leave the context 'suspended' or 'interrupted' (calls, app switches); resume on any gesture
+  if (AC && AC.state !== 'running' && AC.state !== 'closed') AC.resume().catch(() => {});
 }
 function tone(f0, f1, dur, type = 'sine', vol = 0.2, delay = 0) {
   if (!AC || muted) return;
@@ -326,6 +329,8 @@ function setMuted(m) {
   muted = m;
   if (master) master.gain.value = m ? 0 : 0.9;
   $('soundWaves').style.display = m ? 'none' : '';
+  $('soundBtn').classList.toggle('off', m);
+  $('soundBtn').setAttribute('aria-pressed', m ? 'false' : 'true');
   $('soundBtn').setAttribute('aria-label', m ? 'Sound off' : 'Sound on');
   try { localStorage.setItem('lilyleap.muted', m ? '1' : '0'); } catch (e) {}
 }
@@ -449,14 +454,17 @@ function syncMusic() {
 }
 document.addEventListener('visibilitychange', syncMusic);
 // iPhone only allows audio after a touch, so the first tap anywhere starts the title music
-const unlock = () => { ensureAudio(); syncMusic(); };
+// (a tap on the music button only unlocks audio; the button's own click decides on or off)
+const unlock = e => { ensureAudio(); if (!(e.target.closest && e.target.closest('#musicBtn'))) syncMusic(); };
 document.addEventListener('pointerdown', unlock, true);
 document.addEventListener('keydown', unlock, true);
 function setMusic(on) {
   music.on = on;
-  $('musicSlash').hidden = on;
-  $('musicBtn').setAttribute('aria-label', on ? 'Music on' : 'Music off');
-  try { localStorage.setItem('lilyleap.music', on ? '1' : '0'); } catch (e) {}
+  // SVG elements have no .hidden property, so toggle the attribute itself
+  $('musicSlash').toggleAttribute('hidden', on);
+  $('musicBtn').classList.toggle('off', !on);
+  $('musicBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+  $('musicBtn').setAttribute('aria-label', on ? 'Music on' : 'Music off');  try { localStorage.setItem('lilyleap.music', on ? '1' : '0'); } catch (e) {}
   syncMusic();
 }
 setMusic(music.on);
@@ -537,7 +545,12 @@ $('resumeBtn').addEventListener('click', () => { ensureAudio(); resume(); });
 $('quitBtn').addEventListener('click', () => { saveBest(); toTitle(); });
 $('pauseBtn').addEventListener('click', () => { if (state === 'play') pause(); });
 $('soundBtn').addEventListener('click', () => { ensureAudio(); setMuted(!muted); });
-$('musicBtn').addEventListener('click', () => { ensureAudio(); setMusic(!music.on); });
+$('musicBtn').addEventListener('click', () => {
+  ensureAudio();
+  // if music is switched on but the phone hadn't let it start yet, this tap starts it instead of turning it off
+  if (music.on && !music.playing) { if (muted) setMuted(false); syncMusic(); }
+  else { if (!music.on && muted) setMuted(false); setMusic(!music.on); }   // turning music on should be audible
+});
 $('nextBtn').addEventListener('click', () => {
   ensureAudio(); hearts = Math.min(3, hearts + 1); loadLevel(L.n + 1); state = 'play'; show(null);
 });
