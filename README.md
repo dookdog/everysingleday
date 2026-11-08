@@ -8,3 +8,7 @@ For the Future
 ### Sending it to friends
 
 `lily-leap/LilyLeap.html` is one self-contained file (about 134 KB) with the fonts built in. It works offline with nothing else to download. To rebuild it after changing `index.html`, run `python3 lily-leap/build_standalone.py`.
+
+## Lily Leap for Unreal Engine 5
+
+`LilyLeapUnreal/` is the same game rebuilt in Unreal Engine 5 in C++, with a 3D frog, flowers and flies built from code. It has not been compiled yet. See `LilyLeapUnreal/README.md` for how to build it and put it on an iPhone.

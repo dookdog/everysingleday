@@ -1,0 +1,13 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.4",
+	"Category": "",
+	"Description": "Lily Leap: a frog platformer. Hop across flowers and eat every fly in the pond.",
+	"Modules": [
+		{
+			"Name": "LilyLeap",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
