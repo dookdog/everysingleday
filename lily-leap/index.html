@@ -400,12 +400,14 @@ function musicStop() {
   music.playing = false; clearInterval(music.timer); music.timer = null;
   if (AC) { const g = music.gain.gain; g.cancelScheduledValues(AC.currentTime); g.setValueAtTime(g.value, AC.currentTime); g.linearRampToValueAtTime(0, AC.currentTime + 0.3); }
 }
+const MENU_STATES = ['title', 'paused', 'clear', 'over'];
 function syncMusic() {
-  const title = state === 'title';
-  music.bpm = title ? 90 : music.levelBpm;
-  if ((state === 'play' || title) && music.on) musicStart(title ? 0.42 : 0.6); else musicStop();
-  $('musicHint').hidden = !title || !music.on || music.playing;
+  const menu = MENU_STATES.includes(state);
+  music.bpm = menu ? 90 : music.levelBpm;
+  if (music.on && !document.hidden && (menu || state === 'play' || state === 'clearing')) musicStart(menu ? 0.42 : 0.6); else musicStop();
+  $('musicHint').hidden = state !== 'title' || !music.on || music.playing;
 }
+document.addEventListener('visibilitychange', syncMusic);
 // iPhone only allows audio after a touch, so the first tap anywhere starts the title music
 const unlock = () => { ensureAudio(); syncMusic(); };
 document.addEventListener('pointerdown', unlock, true);
@@ -469,7 +471,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && sta
 const screens = ['titleScreen', 'pauseScreen', 'clearScreen', 'overScreen'];
 function show(id) {
   for (const s of screens) $(s).hidden = s !== id;
-  $('topbtns').hidden = !(state === 'play' || state === 'title');
+  $('topbtns').hidden = !(state === 'play' || MENU_STATES.includes(state));
   $('pauseBtn').hidden = state !== 'play';
   syncMusic();
 }
