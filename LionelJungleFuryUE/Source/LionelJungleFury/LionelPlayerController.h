@@ -51,6 +51,9 @@ private:
 	float KeyFwd = 0.f;
 	float KeyRight = 0.f;
 	bool bSprintKey = false;
+	bool bPadActive = false;   // last look input came from a controller stick
+	float PadAssist = 1.f;
+	int32 BackWeapon = 1;
 	EJState LastState = EJState::Title;
 	bool bModeSet = false;
 
@@ -74,6 +77,7 @@ private:
 	void SprintPressed() { bSprintKey = true; }
 	void SprintReleased() { bSprintKey = false; }
 	void JumpPressed();
+	void MeleePressed();
 	void ReloadPressed();
 	void PausePressed();
 	void NextWeapon();

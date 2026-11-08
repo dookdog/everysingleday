@@ -56,6 +56,7 @@ void ALionelPlayerController::SetupInputComponent()
 	Act(TEXT("Sprint"), IE_Pressed, &ALionelPlayerController::SprintPressed);
 	Act(TEXT("Sprint"), IE_Released, &ALionelPlayerController::SprintReleased);
 	Act(TEXT("Jump"), IE_Pressed, &ALionelPlayerController::JumpPressed);
+	Act(TEXT("Melee"), IE_Pressed, &ALionelPlayerController::MeleePressed);
 	Act(TEXT("Reload"), IE_Pressed, &ALionelPlayerController::ReloadPressed);
 	Act(TEXT("Pause"), IE_Pressed, &ALionelPlayerController::PausePressed);
 	Act(TEXT("NextWeapon"), IE_Pressed, &ALionelPlayerController::NextWeapon);
@@ -103,7 +104,11 @@ void ALionelPlayerController::PlayerTick(float DeltaTime)
 	P->MoveInput = bPlay ? FVector2D(KeyRight, KeyFwd) + JoyMove : FVector2D::ZeroVector;
 	P->bFiring = bPlay && (FireHeld > 0 || bMouseFire);
 	P->bSprintInput = bPlay && (bSprint || bSprintKey);
-	if (bPlay) { ApplyTouchLook(DeltaTime, P, GM); }
+	if (bPlay)
+	{
+		ApplyTouchLook(DeltaTime, P, GM);
+		PadAssist = (bPadActive && !bUsedTouch) ? AimAssist(DeltaTime, P, GM) : 1.f;
+	}
 }
 
 void ALionelPlayerController::ApplyTouchLook(float Dt, ALionelCharacter* P, AJungleGameMode* GM)
@@ -141,7 +146,7 @@ float ALionelPlayerController::AimAssist(float Dt, ALionelCharacter* P, AJungleG
 		if (A < BestA) { BestA = A; BestYaw = DYaw; BestPitch = DPitch; bFound = true; }
 	}
 	if (!bFound) { return 1.f; }
-	if (FireHeld > 0 || P->bAds)
+	if (FireHeld > 0 || bMouseFire || P->bAds)
 	{
 		const float Pull = FMath::Min(1.f, Dt * (P->bAds ? 3.2f : 2.2f)) * 0.5f;
 		P->Look(BestYaw * Pull, BestPitch * Pull);
@@ -293,6 +298,7 @@ void ALionelPlayerController::Turn(float V)
 {
 	AJungleGameMode* GM = AJungleGameMode::Get(this);
 	ALionelCharacter* L = Lionel();
+	if (V != 0.f) { bPadActive = false; }
 	if (V != 0.f && GM && L && GM->State == EJState::Playing) { L->Look(V * 2.5f * GM->Sensitivity * (L->bAds ? 0.6f : 1.f), 0.f); }
 }
 
@@ -307,14 +313,18 @@ void ALionelPlayerController::TurnRate(float V)
 {
 	AJungleGameMode* GM = AJungleGameMode::Get(this);
 	ALionelCharacter* L = Lionel();
-	if (V != 0.f && GM && L && GM->State == EJState::Playing) { L->Look(V * 140.f * GetWorld()->GetDeltaSeconds() * GM->Sensitivity * (L->bAds ? 0.55f : 1.f), 0.f); }
+	if (FMath::Abs(V) > 0.2f) { bPadActive = true; bUsedTouch = false; }   // controller in use: hide touch controls
+	const float Curved = FMath::Sign(V) * FMath::Pow(FMath::Abs(V), 1.6f);   // fine control near center, fast at full tilt
+	if (V != 0.f && GM && L && GM->State == EJState::Playing) { L->Look(Curved * 150.f * GetWorld()->GetDeltaSeconds() * GM->Sensitivity * (L->bAds ? 0.5f : 1.f) * PadAssist, 0.f); }
 }
 
 void ALionelPlayerController::LookUpRate(float V)
 {
 	AJungleGameMode* GM = AJungleGameMode::Get(this);
 	ALionelCharacter* L = Lionel();
-	if (V != 0.f && GM && L && GM->State == EJState::Playing) { L->Look(0.f, V * 100.f * GetWorld()->GetDeltaSeconds() * GM->Sensitivity * (L->bAds ? 0.55f : 1.f)); }
+	if (FMath::Abs(V) > 0.2f) { bPadActive = true; bUsedTouch = false; }
+	const float Curved = FMath::Sign(V) * FMath::Pow(FMath::Abs(V), 1.6f);
+	if (V != 0.f && GM && L && GM->State == EJState::Playing) { L->Look(0.f, Curved * 105.f * GetWorld()->GetDeltaSeconds() * GM->Sensitivity * (L->bAds ? 0.5f : 1.f) * PadAssist); }
 }
 
 void ALionelPlayerController::FirePressed()
@@ -352,9 +362,23 @@ void ALionelPlayerController::AimReleased()
 
 void ALionelPlayerController::JumpPressed()
 {
+	// A: start from the title or game-over screen, resume from pause, otherwise jump.
 	AJungleGameMode* GM = AJungleGameMode::Get(this);
 	if (GM && (GM->State == EJState::Title || GM->State == EJState::Over)) { GM->StartGame(); return; }
+	if (GM && GM->State == EJState::Paused) { Action(TEXT("resume")); return; }
 	Action(TEXT("jump"));
+}
+
+void ALionelPlayerController::MeleePressed()
+{
+	// B: resume from pause; in play, swap to the machete and back.
+	AJungleGameMode* GM = AJungleGameMode::Get(this);
+	ALionelCharacter* P = Lionel();
+	if (!GM || !P) { return; }
+	if (GM->State == EJState::Paused) { Action(TEXT("resume")); return; }
+	if (GM->State != EJState::Playing) { return; }
+	if (P->Cur != 0) { BackWeapon = P->Cur; P->Select(0); }
+	else { P->Select(BackWeapon); }
 }
 
 void ALionelPlayerController::ReloadPressed() { Action(TEXT("reload")); }

@@ -61,17 +61,23 @@ If the automatic build fails, open the generated `.sln` (or `.xcworkspace`), bui
 
 ## Controls
 
-| | Keyboard and mouse | Gamepad | iPhone |
+Xbox, PlayStation and other Bluetooth controllers work on PC, Mac and iPhone. On iPhone, the touch controls hide automatically while a controller is in use.
+
+| | Keyboard and mouse | Controller (Xbox names) | iPhone touch |
 |---|---|---|---|
-| Move | WASD or arrows | Left stick | Analog thumbstick: touch anywhere on the left side. It has a dead zone, and the base follows your thumb |
-| Sprint | Hold Shift | Click left stick | Push the stick forward past the ring (it turns gold) |
-| Look | Mouse | Right stick | Drag on the right side. Smoothed, with faster turns for quick flicks and gentle aim assist |
-| Fire | Left click | Right trigger | Hold **FIRE** (right) and slide it to aim while firing, or use the left-thumb **FIRE** next to the stick |
-| Aim down sights | Hold right mouse | Left trigger | Tap **AIM**: zooms in, tightens spread, cuts recoil |
+| Move | WASD or arrows | Left stick | Analog thumbstick: touch anywhere on the left side |
+| Sprint | Hold Shift | Click left stick (L3) | Push the stick forward past the ring |
+| Look | Mouse | Right stick (curved for fine aim, with aim assist) | Drag on the right side |
+| Fire | Left click | RT | Hold **FIRE**, right or left |
+| Aim down sights | Hold right mouse | Hold LT | Tap **AIM** |
 | Jump | Space | A | **JUMP** |
 | Reload | R | X | **RELOAD** |
-| Weapons | 1–7, mouse wheel, Q/E | Bumpers | Tap a slot in the weapon bar |
-| Pause | P or Esc | Menu | **II** button |
+| Machete and back | V | B | Tap slot 1 |
+| Next / previous weapon | Wheel, E / Q, 1–7 | Y or RB or D-pad up/right / LB or D-pad down/left | Tap a slot |
+| Pause | P or Esc | Menu or View | **II** |
+| Menus | Click | A starts and resumes, B resumes, Menu pauses | Tap |
+
+Firing and taking damage make the controller rumble.
 
 In the editor, Esc ends the play session, so use **P** to pause.
 

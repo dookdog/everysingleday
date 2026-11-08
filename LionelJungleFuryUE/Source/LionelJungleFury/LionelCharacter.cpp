@@ -10,6 +10,7 @@
 #include "Components/PointLightComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 
 namespace
@@ -305,6 +306,7 @@ void ALionelCharacter::Hurt(float Damage)
 	GM->HurtFlash = FMath::Min(1.f, GM->HurtFlash + Damage / 26.f);
 	Shake += 0.22f;
 	GM->Sfx(ESfx::Hurt);
+	if (APlayerController* PCtrl = Cast<APlayerController>(GetController())) { PCtrl->PlayDynamicForceFeedback(0.7f, 0.18f, true, true, true, true); }
 	if (Health <= 0.f)
 	{
 		Health = 0.f;
@@ -529,6 +531,11 @@ void ALionelCharacter::Fire()
 
 	Cooldown = W.Rate;
 	Kick += W.Kick * (bAds ? 0.7f : 1.f);
+	if (APlayerController* PCtrl = Cast<APlayerController>(GetController()))
+	{
+		const bool bHeavy = W.Pellets > 1 || W.Kind == EWeaponKind::Proj;
+		PCtrl->PlayDynamicForceFeedback(bHeavy ? 0.6f : 0.15f, bHeavy ? 0.12f : 0.05f, true, true, true, true);   // controller rumble
+	}
 	VmKick = 1.f;
 	GM->Sfx(W.Sfx);
 	const FVector Aim = AimDir();

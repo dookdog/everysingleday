@@ -177,7 +177,7 @@ void AJungleHUD::DrawTitle(AJungleGameMode* GM, ALionelPlayerController* PC)
 
 	Txt(PC->bUsedTouch
 		? TEXT("Left stick moves; push past the ring to sprint. Drag right to look. FIRE with either thumb. AIM zooms the sights.")
-		: TEXT("WASD move  /  Shift sprint  /  Mouse aim  /  Click fire  /  Right-click sights  /  1-7 swap  /  R reload  /  P pause"),
+		: TEXT("WASD/Mouse or controller  /  RT fire  /  LT sights  /  L3 sprint  /  A jump  /  X reload  /  Y next  /  B machete  /  Menu pause"),
 		Cx, Y, 12.f, Mist, 0.5f, false);
 	Y += 22.f * U;
 	Txt(FString::Printf(TEXT("BEST SCORE  %d"), GM->Best), Cx, Y, 12.f, Jade, 0.5f, false);
