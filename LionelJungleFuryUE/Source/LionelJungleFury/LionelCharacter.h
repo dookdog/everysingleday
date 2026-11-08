@@ -36,6 +36,12 @@ public:
 	/** Set every frame by the player controller. X = strafe, Y = forward. */
 	FVector2D MoveInput = FVector2D::ZeroVector;
 	bool bFiring = false;
+	bool bSprintInput = false;   // stick pushed past the sprint ring, or Shift held
+	bool bAds = false;           // aiming down sights
+	float AdsT = 0.f;            // 0 = hip, 1 = fully aimed
+
+	void SetAds(bool bOn) { bAds = bOn; }
+	bool IsSprinting() const { return bSprinting; }
 
 	void ResetForGame();
 	void Look(float YawDeg, float PitchDeg);
@@ -63,6 +69,16 @@ private:
 	UPROPERTY() UStaticMeshComponent* Flash = nullptr;
 	UPROPERTY() UPointLightComponent* MuzzleLight = nullptr;
 	TArray<FVector> Muzzles;
+	TArray<FVector> Ejects;   // ejection ports (gun-local, m); zero = this weapon ejects nothing
+
+	// Casings flying out of the gun in camera space, before they become physics bodies.
+	struct FVmCasing { FVector P = FVector::ZeroVector; FVector V = FVector::ZeroVector; FRotator Spin = FRotator::ZeroRotator; float Life = 0.f; bool bShell = false; };
+	UPROPERTY() TArray<UStaticMeshComponent*> VmCasings;
+	TArray<FVmCasing> VmCasingState;
+	int32 VmCasingNext = 0;
+	bool bSprinting = false;
+	void EjectVM(bool bShell);
+	void UpdateVmCasings(float Dt);
 
 	int32 Pend = 1;
 	float Cooldown = 0.f;

@@ -20,7 +20,7 @@ enum class EWeaponKind : uint8 { Melee, Ray, Proj, Chain };
 enum class ESfx : uint8
 {
 	Slash, Pistol, Smg, Shotgun, Crossbow, Launcher, Boom, Zap, Hit, Kill, Hurt,
-	Pickup, Reload, Empty, EnemyShot, Roar, Unlock, Death, Chirp
+	Pickup, Reload, Empty, EnemyShot, Roar, Unlock, Death, Chirp, Tink
 };
 
 /** Static tuning for one weapon. Distances are meters, times are seconds. Res/Max of -1 = unlimited. */

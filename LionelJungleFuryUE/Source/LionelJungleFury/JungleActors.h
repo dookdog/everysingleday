@@ -8,6 +8,8 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UPhysicalMaterial;
+class UPrimitiveComponent;
 
 /** A coconut from the launcher (arcs, explodes) or an enemy orb (flies straight at Lionel). */
 UCLASS()
@@ -74,6 +76,13 @@ private:
 	UPROPERTY() TArray<UStaticMeshComponent*> PComps;
 	UPROPERTY() TArray<UStaticMeshComponent*> TComps;
 	UPROPERTY() UPointLightComponent* Light = nullptr;
+	UPROPERTY() UPhysicalMaterial* Brass = nullptr;   // springy, low friction: casings bounce and skitter
+	TMap<TWeakObjectPtr<UPrimitiveComponent>, int32> Clinks;
+	float LastClink = 0.f;
+	float Now = 0.f;
+
+	UFUNCTION()
+	void OnCasingHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 	TArray<FParticle> Ps;
 	TArray<FTracer> Ts;
 	int32 PNext = 0;

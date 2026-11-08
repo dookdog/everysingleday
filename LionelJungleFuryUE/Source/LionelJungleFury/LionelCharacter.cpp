@@ -91,6 +91,10 @@ void ALionelCharacter::ResetForGame()
 	Cur = Pend = 1;
 	Cooldown = SwitchT = ReloadT = SwingT = VmKick = Kick = AppliedKick = Shake = MuzzleT = 0.f;
 	bReloading = bPendReload = bFiring = false;
+	bAds = bSprintInput = bSprinting = false;
+	AdsT = 0.f;
+	Camera->SetFieldOfView(100.f);
+	for (UStaticMeshComponent* C : VmCasings) { C->SetVisibility(false); }
 	LifeT = 0.f;
 	SetActorLocation(StartLoc, false, nullptr, ETeleportType::TeleportPhysics);
 	GetCharacterMovement()->StopMovementImmediately();
@@ -208,6 +212,19 @@ void ALionelCharacter::BuildViewmodels()
 	}
 
 	Flash = JW::Part(this, ViewRoot, EShape::Sphere, JW::Hex(0xffe9a0), FVector(0.09f), FVector::ZeroVector);
+
+	// Ejection ports, gun-local: pistol slide, SMG receiver, shotgun breech.
+	Ejects.Init(FVector::ZeroVector, NumWeapons);
+	Ejects[1] = FVector(0.07f, 0.035f, 0.075f);
+	Ejects[2] = FVector(0.08f, 0.045f, 0.075f);
+	Ejects[3] = FVector(-0.02f, 0.05f, 0.07f);
+	for (int32 i = 0; i < 10; ++i)
+	{
+		UStaticMeshComponent* C = JW::Part(this, Camera, EShape::Cylinder, JW::Hex(0xd8a43a), FVector(0.022f, 0.022f, 0.055f), FVector::ZeroVector);
+		C->SetVisibility(false);
+		VmCasings.Add(C);
+		VmCasingState.AddDefaulted();
+	}
 	Flash->SetVisibility(false);
 
 	TArray<UStaticMeshComponent*> Parts;
@@ -353,7 +370,13 @@ void ALionelCharacter::Tick(float Dt)
 	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), Mv.X);
 	MoveAmt = GetCharacterMovement()->IsMovingOnGround() ? FMath::Min(1.f, (float)Mv.Size()) : 0.f;
 	const FVector L = GetActorLocation() / JW::M;
-	GetCharacterMovement()->MaxWalkSpeed = JW::Hgt(L.X, L.Y) < JW::Water - 0.2f ? 460.f : 740.f;
+	bSprinting = bSprintInput && Mv.Y > 0.3f && !bAds && !bFiring;
+	GetCharacterMovement()->MaxWalkSpeed = (JW::Hgt(L.X, L.Y) < JW::Water - 0.2f ? 460.f : 740.f) * (bSprinting ? 1.42f : 1.f) * (bAds ? 0.6f : 1.f);
+
+	// Aim down sights: ease the zoom in and out; widen slightly while sprinting.
+	AdsT += ((bAds && SwitchT <= 0.f ? 1.f : 0.f) - AdsT) * FMath::Min(1.f, Dt * 14.f);
+	const float WantFov = 100.f - 30.f * AdsT + (bSprinting ? 6.f : 0.f);
+	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, WantFov, Dt, 12.f));
 
 	// Recoil climbs and settles back.
 	Kick *= FMath::Exp(-Dt * 9.f);
@@ -437,10 +460,12 @@ void ALionelCharacter::UpdateViewmodel(float Dt)
 	const float Sw = SwitchT > 0.f ? (SwitchT > SwitchTime / 2 ? (SwitchTime - SwitchT) / (SwitchTime / 2) : SwitchT / (SwitchTime / 2)) : 0.f;
 	const float Rl = bReloading && W.Reload > 0.f ? FMath::Sin(PI * (1.f - ReloadT / W.Reload)) : 0.f;
 
+	const float Bob = (bSprinting ? 2.2f : 1.f) * (1.f - AdsT * 0.8f);
 	ViewRoot->SetRelativeLocation(FVector(
-		46.f - VmKick * 7.f,
-		22.f + FMath::Sin(BobT) * 1.2f * MoveAmt - SwayX * 2.f,
-		-23.f + FMath::Abs(FMath::Cos(BobT)) * 1.2f * MoveAmt - Sw * 35.f - Rl * 12.f + SwayY * 1.5f));
+		46.f + AdsT * 5.f - VmKick * 7.f * (1.f - AdsT * 0.5f),
+		22.f * (1.f - AdsT) + FMath::Sin(BobT) * 1.2f * MoveAmt * Bob - SwayX * 2.f * (1.f - AdsT * 0.7f),
+		-23.f + AdsT * 4.5f + FMath::Abs(FMath::Cos(BobT)) * 1.2f * MoveAmt * Bob - Sw * 35.f - Rl * 12.f + SwayY * 1.5f - (bSprinting ? 5.f : 0.f)));
+	UpdateVmCasings(Dt);
 	ViewRoot->SetRelativeRotation(FRotator(
 		FMath::RadiansToDegrees(VmKick * (W.Pellets > 1 ? 0.35f : 0.16f) + Rl * 0.6f - Sw * 0.5f),
 		SwayX * 3.f,
@@ -503,7 +528,7 @@ void ALionelCharacter::Fire()
 	}
 
 	Cooldown = W.Rate;
-	Kick += W.Kick;
+	Kick += W.Kick * (bAds ? 0.7f : 1.f);
 	VmKick = 1.f;
 	GM->Sfx(W.Sfx);
 	const FVector Aim = AimDir();
@@ -517,13 +542,12 @@ void ALionelCharacter::Fire()
 	case EWeaponKind::Ray:
 		for (int32 i = 0; i < W.Pellets; ++i)
 		{
-			const FVector Dir = (Aim + FVector(JW::Rand(-1, 1), JW::Rand(-1, 1), JW::Rand(-1, 1)) * W.Spread).GetSafeNormal();
+			const FVector Dir = (Aim + FVector(JW::Rand(-1, 1), JW::Rand(-1, 1), JW::Rand(-1, 1)) * W.Spread * (bAds ? 0.35f : 1.f) * (bSprinting ? 1.6f : 1.f)).GetSafeNormal();
 			ShootRay(Dir, W);
 		}
 		MuzzleT = 0.05f;
 		// Brass (or a red shotgun shell) tumbles out of the ejection port and bounces for real.
-		GM->FX->Casing(Camera->GetComponentTransform().TransformPosition(FVector(55.f, 24.f, -14.f)),
-			Camera->GetRightVector() * JW::Rand(180.f, 280.f) + FVector(0.f, 0.f, JW::Rand(150.f, 240.f)) + GetVelocity(), W.Pellets > 1);
+		EjectVM(W.Pellets > 1);
 		break;
 	case EWeaponKind::Proj:
 	{
@@ -682,4 +706,62 @@ void ALionelCharacter::Chain(const FWeaponDef& W)
 		GM->FX->Burst(B, 6, JW::Hex(0x9ffaff), 500.f, 10.f, 0.35f, 400.f, 0.f);
 	}
 	GM->FX->Flash(Pts.Last(), JW::Hex(0x8ff8ff), 30000.f, 0.15f);
+}
+
+// ============================================================================================
+// Shell ejection: the casing flips out of the ejection port in camera space, with a brass
+// glint and a puff of smoke, then becomes a real physics body at the same spot on screen.
+// ============================================================================================
+
+void ALionelCharacter::EjectVM(bool bShell)
+{
+	if (!Ejects.IsValidIndex(Cur) || Ejects[Cur].IsZero() || VmCasings.Num() == 0) { return; }
+	AJungleGameMode* GM = AJungleGameMode::Get(this);
+	const FVector World = Guns[Cur]->GetComponentTransform().TransformPosition(Ejects[Cur] * JW::M);
+	const FVector Local = Camera->GetComponentTransform().InverseTransformPosition(World);
+
+	const int32 i = VmCasingNext;
+	VmCasingNext = (VmCasingNext + 1) % VmCasings.Num();
+	FVmCasing& S = VmCasingState[i];
+	UStaticMeshComponent* C = VmCasings[i];
+	S.P = Local;
+	S.V = FVector(JW::Rand(-5.f, 30.f), JW::Rand(140.f, 200.f), JW::Rand(110.f, 160.f));
+	S.Spin = FRotator(JW::Rand(-1200.f, 1200.f), JW::Rand(-400.f, 400.f), JW::Rand(900.f, 1500.f));
+	S.Life = 0.2f;
+	S.bShell = bShell;
+	C->SetMaterial(0, UJungleAssets::Get(this)->Mat(JW::Hex(bShell ? 0xb3201a : 0xd8a43a)));
+	C->SetRelativeScale3D(bShell ? FVector(0.04f, 0.04f, 0.07f) : FVector(0.022f, 0.022f, 0.055f));
+	C->SetRelativeLocationAndRotation(Local, FRotator(0.f, 0.f, 90.f));
+	C->SetVisibility(true);
+
+	if (GM && GM->FX)
+	{
+		GM->FX->Burst(World, 2, JW::Hex(0xffd27a), 120.f, 3.f, 0.08f, 0.f, 0.f);       // brass glint
+		GM->FX->Burst(World, 3, JW::Hex(0xbdb6a8), 60.f, 5.f, 0.45f, -120.f, 40.f);    // smoke puff, rising
+	}
+}
+
+void ALionelCharacter::UpdateVmCasings(float Dt)
+{
+	AJungleGameMode* GM = AJungleGameMode::Get(this);
+	for (int32 i = 0; i < VmCasings.Num(); ++i)
+	{
+		UStaticMeshComponent* C = VmCasings[i];
+		if (!C->IsVisible()) { continue; }
+		FVmCasing& S = VmCasingState[i];
+		S.Life -= Dt;
+		S.V.Z -= 600.f * Dt;
+		S.P += S.V * Dt;
+		C->SetRelativeLocation(S.P);
+		C->AddLocalRotation(S.Spin * Dt);
+		if (S.Life <= 0.f)
+		{
+			C->SetVisibility(false);
+			if (GM && GM->FX && GM->State == EJState::Playing)
+			{
+				const FTransform& Cam = Camera->GetComponentTransform();
+				GM->FX->Casing(Cam.TransformPosition(S.P), Cam.TransformVectorNoScale(S.V) + GetVelocity(), S.bShell);
+			}
+		}
+	}
 }

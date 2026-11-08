@@ -19,7 +19,7 @@ public:
 	enum ESound
 	{
 		Slash, Pistol, Smg, Shotgun, Crossbow, Launcher, Boom, Zap, Hit, Kill, Hurt,
-		Pickup, Reload, Empty, EnemyShot, Roar, Unlock, Death, Chirp
+		Pickup, Reload, Empty, EnemyShot, Roar, Unlock, Death, Chirp, Tink
 	};
 
 	explicit FJungleSynthCore(int InSampleRate = 32000)
@@ -66,6 +66,7 @@ public:
 			for (int i = 0; i < N; ++i) { Tn(B, B + Uni(500, 1200), 0.08f, Sine, 0.045f, i * 0.11f); }
 			break;
 		}
+		case Tink: Tn(Uni(3800, 5200), Uni(3000, 4200), 0.06f, Tri, 0.05f); Tn(Uni(6500, 8200), Uni(5600, 7000), 0.04f, Sine, 0.028f, 0.004f); break;
 		default: break;
 		}
 	}

@@ -63,15 +63,19 @@ If the automatic build fails, open the generated `.sln` (or `.xcworkspace`), bui
 
 | | Keyboard and mouse | Gamepad | iPhone |
 |---|---|---|---|
-| Move | WASD or arrows | Left stick | Left thumb, anywhere on the left side |
-| Aim | Mouse | Right stick | Drag your right thumb |
-| Fire | Left click | Right trigger | Hold **FIRE**. Slide it to aim while firing |
+| Move | WASD or arrows | Left stick | Analog thumbstick: touch anywhere on the left side. It has a dead zone, and the base follows your thumb |
+| Sprint | Hold Shift | Click left stick | Push the stick forward past the ring (it turns gold) |
+| Look | Mouse | Right stick | Drag on the right side. Smoothed, with faster turns for quick flicks and gentle aim assist |
+| Fire | Left click | Right trigger | Hold **FIRE** (right) and slide it to aim while firing, or use the left-thumb **FIRE** next to the stick |
+| Aim down sights | Hold right mouse | Left trigger | Tap **AIM**: zooms in, tightens spread, cuts recoil |
 | Jump | Space | A | **JUMP** |
 | Reload | R | X | **RELOAD** |
 | Weapons | 1–7, mouse wheel, Q/E | Bumpers | Tap a slot in the weapon bar |
 | Pause | P or Esc | Menu | **II** button |
 
 In the editor, Esc ends the play session, so use **P** to pause.
+
+**Shell ejection.** The pistol, SMG and shotgun each kick a casing out of their ejection port with a brass glint and a puff of smoke. As it clears the gun, the casing becomes a real physics body with bouncy brass. It skitters across the stone, rolls down the temple steps and clinks on impact.
 
 ## Running it on an iPhone
 

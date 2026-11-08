@@ -176,8 +176,8 @@ void AJungleHUD::DrawTitle(AJungleGameMode* GM, ALionelPlayerController* PC)
 	Y += BH + 18.f * U;
 
 	Txt(PC->bUsedTouch
-		? TEXT("Left thumb moves. Right thumb aims. Hold FIRE and slide it to aim while shooting.")
-		: TEXT("WASD move  /  Mouse aim  /  Click fire  /  1-7 or wheel swap  /  R reload  /  Space jump  /  P pause"),
+		? TEXT("Left stick moves; push past the ring to sprint. Drag right to look. FIRE with either thumb. AIM zooms the sights.")
+		: TEXT("WASD move  /  Shift sprint  /  Mouse aim  /  Click fire  /  Right-click sights  /  1-7 swap  /  R reload  /  P pause"),
 		Cx, Y, 12.f, Mist, 0.5f, false);
 	Y += 22.f * U;
 	Txt(FString::Printf(TEXT("BEST SCORE  %d"), GM->Best), Cx, Y, 12.f, Jade, 0.5f, false);
@@ -203,10 +203,11 @@ void AJungleHUD::DrawPlay(AJungleGameMode* GM, ALionelCharacter* P, ALionelPlaye
 
 	// Crosshair
 	const float CL = 8.f * U, CG = 6.f * U, CT = FMath::Max(2.f, 2.f * U);
-	Box(Ctr.X - CT / 2, Ctr.Y - CG - CL, CT, CL, Bone);
-	Box(Ctr.X - CT / 2, Ctr.Y + CG, CT, CL, Bone);
-	Box(Ctr.X - CG - CL, Ctr.Y - CT / 2, CL, CT, Bone);
-	Box(Ctr.X + CG, Ctr.Y - CT / 2, CL, CT, Bone);
+	const FLinearColor CrossC = Bone.CopyWithNewOpacity(P->bAds ? 0.25f : 1.f);
+	Box(Ctr.X - CT / 2, Ctr.Y - CG - CL, CT, CL, CrossC);
+	Box(Ctr.X - CT / 2, Ctr.Y + CG, CT, CL, CrossC);
+	Box(Ctr.X - CG - CL, Ctr.Y - CT / 2, CL, CT, CrossC);
+	Box(Ctr.X + CG, Ctr.Y - CT / 2, CL, CT, CrossC);
 	Box(Ctr.X - CT * 0.75f, Ctr.Y - CT * 0.75f, CT * 1.5f, CT * 1.5f, Gold);
 	if (GM->HitTime > 0.f)
 	{
@@ -278,7 +279,7 @@ void AJungleHUD::DrawPlay(AJungleGameMode* GM, ALionelCharacter* P, ALionelPlaye
 	if (Wd.Kind == EWeaponKind::Melee) { Ammo = TEXT("--"); }
 	else if (Wd.Regen > 0.f) { Ammo = FString::Printf(TEXT("%d / %d"), FMath::FloorToInt(G.Mag), Wd.Mag); }
 	else { Ammo = FString::Printf(TEXT("%d / %s"), FMath::FloorToInt(G.Mag), G.Res < 0 ? TEXT("∞") : *FString::FromInt(G.Res)); }
-	const float AY = bTouch ? H - My - 170.f * U : H - My - 62.f * U;
+	const float AY = bTouch ? H - My - 236.f * U : H - My - 62.f * U;
 	Txt(Wd.Full, W - Mx, AY, 11.f, Gold, 1.f);
 	Txt(Ammo, W - Mx, AY + 15.f * U, 26.f, Bone, 1.f);
 	if (P->IsReloading()) { Txt(TEXT("RELOADING"), W - Mx, AY + 46.f * U, 11.f, Jade, 1.f); }
@@ -290,11 +291,18 @@ void AJungleHUD::DrawPlay(AJungleGameMode* GM, ALionelCharacter* P, ALionelPlaye
 		RoundButton(TEXT("jump"), FVector2D(W - Mx - 140.f * U, H - My - 30.f * U), 30.f * U, TEXT("JUMP"), false, Ink, 11.f);
 		RoundButton(TEXT("reload"), FVector2D(W - Mx - 128.f * U, H - My - 100.f * U), 27.f * U, TEXT("RELOAD"), false, Ink, 9.f);
 
+		RoundButton(TEXT("ads"), FVector2D(W - Mx - 48.f * U, H - My - 142.f * U), 30.f * U, TEXT("AIM"), P->bAds, Ink, 11.f);
+		// Left-thumb fire, up and to the right of the stick.
+		RoundButton(TEXT("fire"), FVector2D(Mx + 219.f * U, H - My - 179.f * U), 29.f * U, TEXT("FIRE"), PC->FireHeld > 0, FLinearColor(0.2f, 0.02f, 0.005f, 0.4f), 11.f);
+
+		const float SR = PC->StickRadius();
 		const FVector2D Base = PC->bJoy ? PC->JoyOrigin : FVector2D(Mx + 100.f * U, H - My - 100.f * U);
 		const float JA = PC->bJoy ? 1.f : 0.45f;
 		Disc(Base, 60.f * U, FLinearColor(0.003f, 0.01f, 0.004f, 0.25f * JA));
-		Ring(Base, 60.f * U, Bone.CopyWithNewOpacity(0.3f * JA), FMath::Max(1.f, 1.5f * U));
-		Disc(Base + PC->JoyKnob, 26.f * U, Bone.CopyWithNewOpacity(0.35f * JA));
+		Ring(Base, 60.f * U, (PC->bSprint ? Gold : Bone.CopyWithNewOpacity(0.3f * JA)), FMath::Max(1.f, 1.5f * U));
+		if (PC->bJoy) { Ring(Base, SR * 1.35f, Gold.CopyWithNewOpacity(PC->bSprint ? 0.8f : 0.25f), FMath::Max(1.f, U)); }
+		if (PC->bSprint) { Txt(TEXT("S P R I N T"), Base.X, Base.Y - SR * 1.35f - 18.f * U, 10.f, Gold, 0.5f); }
+		Disc(Base + PC->JoyKnob, 26.f * U, PC->bSprint ? Gold.CopyWithNewOpacity(0.6f) : Bone.CopyWithNewOpacity(0.35f * JA));
 	}
 }
 

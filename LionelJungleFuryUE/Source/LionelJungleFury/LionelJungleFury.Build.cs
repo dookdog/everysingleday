@@ -6,7 +6,7 @@ public class LionelJungleFury : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] {
-			"Core", "CoreUObject", "Engine", "InputCore", "RenderCore", "ProceduralMeshComponent"
+			"Core", "CoreUObject", "Engine", "InputCore", "RenderCore", "PhysicsCore", "ProceduralMeshComponent"
 		});
 	}
 }

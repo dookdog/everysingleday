@@ -5,6 +5,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Engine/World.h"
 #include "Engine/StaticMeshActor.h"
 
@@ -182,6 +183,12 @@ void AJungleFX::BeginPlay()
 	}
 	Ts.SetNum(TComps.Num());
 
+	Brass = NewObject<UPhysicalMaterial>(this);
+	Brass->Friction = 0.25f;
+	Brass->Restitution = 0.5f;
+	Brass->bOverrideRestitutionCombineMode = true;
+	Brass->RestitutionCombineMode = EFrictionCombineMode::Max;
+
 	Light = NewObject<UPointLightComponent>(this);
 	Light->SetMobility(EComponentMobility::Movable);
 	Light->SetupAttachment(Root);
@@ -251,13 +258,33 @@ void AJungleFX::Casing(const FVector& At, const FVector& Velocity, bool bShotgun
 	MC->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	MC->SetUseCCD(true);
 	MC->SetCastShadow(false);
+	MC->SetPhysMaterialOverride(Brass);
+	MC->SetNotifyRigidBodyCollision(true);
+	MC->OnComponentHit.AddDynamic(this, &AJungleFX::OnCasingHit);
 	MC->SetPhysicsLinearVelocity(Velocity);
 	MC->SetPhysicsAngularVelocityInDegrees(FMath::VRand() * 720.f);
+}
+
+void AJungleFX::OnCasingHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	// A small metallic clink for the first few real impacts of each casing near Lionel.
+	if (!HitComp || Now - LastClink < 0.035f) { return; }
+	const float Speed = (float)NormalImpulse.Size() / FMath::Max(HitComp->GetMass(), 0.001f);   // cm/s change along the normal
+	if (Speed < 70.f) { return; }
+	int32& N = Clinks.FindOrAdd(HitComp);
+	if (N >= 4) { return; }
+	++N;
+	LastClink = Now;
+	AJungleGameMode* GM = AJungleGameMode::Get(this);
+	ALionelCharacter* P = GM ? GM->Player() : nullptr;
+	if (P && FVector::Dist(P->GetActorLocation(), HitComp->GetComponentLocation()) < 1200.f) { GM->Sfx(ESfx::Tink); }
 }
 
 void AJungleFX::Tick(float Dt)
 {
 	Super::Tick(Dt);
+	Now += Dt;
+	if (Clinks.Num() > 64) { Clinks.Empty(); }
 	for (int32 i = 0; i < Ps.Num(); ++i)
 	{
 		FParticle& P = Ps[i];
