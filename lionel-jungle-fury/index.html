@@ -163,7 +163,10 @@ label.sens input{width:150px;accent-color:var(--gold)}
     <div class="arsenal">
       <span>MACHETE</span><span>JAGUAR .45</span><span>MONSOON SMG</span><span>RHINO BOOMSTICK</span><span>VIPER CROSSBOW</span><span>COCONUT LAUNCHER</span><span>STORM TOTEM</span>
     </div>
-    <button class="cta" id="startBtn">ENTER THE JUNGLE</button>
+    <div class="row">
+      <button class="cta" id="startBtn">ENTER THE JUNGLE</button>
+      <button class="ghost" id="tMusic">PLAY THEME</button>
+    </div>
     <div class="hint" id="hint"></div>
     <div class="best">BEST SCORE <span id="bestT">0</span></div>
   </div>
@@ -430,6 +433,7 @@ function updTracers(dt){for(const t of TR){if(!t.m.visible)continue;t.l-=dt;if(t
 /* ---------- audio ---------- */
 let AC=null,MG=null,NB=null,muted=store.get('lionel-muted','0')==='1';
 function audioInit(){
+  try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
   if(AC){if(AC.state==='suspended')AC.resume();return}
   try{
     AC=new (window.AudioContext||window.webkitAudioContext)();
@@ -478,8 +482,34 @@ function mosc(type,f,t,a,peak,d,f2,filt,det){const o=AC.createOscillator();o.typ
   let n=o;if(filt){const fl=AC.createBiquadFilter();fl.type='lowpass';fl.frequency.value=filt;o.connect(fl);n=fl}n.connect(g).connect(MU);o.start(t);o.stop(t+a+d+0.05)}
 function mnz(t,d,f,type,g){const s=AC.createBufferSource();s.buffer=NB;const fl=AC.createBiquadFilter();fl.type=type;fl.frequency.value=f;const gn=AC.createGain();
   gn.gain.setValueAtTime(g,t);gn.gain.exponentialRampToValueAtTime(0.0001,t+d);s.connect(fl).connect(gn).connect(MU);s.start(t,Math.random()*1.5);s.stop(t+d+0.05)}
+/* intro theme: 8 bars, Am | F | G | Em | Am | F | G | E, played by a breathy flute over harp arpeggios */
+const INTRO_CH=[[45,57,60,64],[41,57,60,65],[43,55,59,62],[40,55,59,64],[45,57,60,64],[41,57,60,65],[43,55,59,62],[40,56,59,64]];
+const INTRO_MEL=[[0,76,6],[6,74,2],[8,72,4],[12,69,4],[16,72,6],[22,74,2],[24,76,4],[28,72,4],[32,74,6],[38,71,2],[40,67,4],[44,71,4],
+  [48,76,12],[60,79,4],[64,81,6],[70,79,2],[72,76,4],[76,72,4],[80,77,4],[84,76,4],[88,72,4],[92,69,4],[96,71,4],[100,74,4],[104,79,4],[108,74,4],
+  [112,68,4],[116,71,4],[120,76,8]];
+function flute(f,t,dur){
+  const o=AC.createOscillator(),o2=AC.createOscillator(),v=AC.createOscillator(),vg=AC.createGain(),g=AC.createGain(),fl=AC.createBiquadFilter();
+  o.type='sine';o2.type='triangle';o.frequency.value=f;o2.frequency.value=f;
+  v.frequency.value=5.2;vg.gain.setValueAtTime(0,t);vg.gain.linearRampToValueAtTime(14,t+Math.min(0.5,dur*0.6));v.connect(vg);vg.connect(o.detune);vg.connect(o2.detune);
+  fl.type='lowpass';fl.frequency.value=2600;
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.12,t+0.07);g.gain.setValueAtTime(0.12,t+Math.max(0.08,dur-0.12));g.gain.exponentialRampToValueAtTime(0.0001,t+dur+0.25);
+  const g2=AC.createGain();g2.gain.value=0.35;o.connect(fl);o2.connect(g2).connect(fl);fl.connect(g).connect(MU);
+  [o,o2,v].forEach(x=>{x.start(t);x.stop(t+dur+0.3)});
+  mnz(t,0.08,3000,'bandpass',0.025);
+}
+function playIntro(i,t,s16){
+  const bar=mBar%8,abs=bar*16+i,ch=INTRO_CH[bar];
+  if(i===0){mosc('triangle',mtof(ch[0]),t,0.05,0.22,s16*15);mosc('sine',mtof(ch[0]-12),t,0.05,0.18,s16*15);
+    ch.slice(1).forEach(m=>{mosc('sawtooth',mtof(m),t,0.8,0.016,s16*15,null,900,-5);mosc('sawtooth',mtof(m),t,0.8,0.016,s16*15,null,900,6)})}
+  if(i%2===0){const arp=[ch[1]+12,ch[2]+12,ch[3]+12,ch[2]+12][(i/2)%4];const f=mtof(arp);mosc('sine',f,t,0.002,0.07,0.6);mosc('sine',f*2,t,0.001,0.02,0.15)}
+  if(i===0||i===10)mosc('sine',i?150:105,t,0.002,0.3,0.3,i?95:60);
+  if(i===6||i===14)mnz(t,0.06,6500,'highpass',0.025);
+  if(bar===7&&i>=12)mosc('sine',i%2?160:120,t,0.002,0.25,0.15,80);
+  for(const n of INTRO_MEL)if(n[0]===abs)flute(mtof(n[1]),t,n[2]*s16);
+}
 function playStep(i,t,s16){
   const L=mLevel,root=45+PROG[mBar%4];
+  if(L===0){playIntro(i,t,s16);return}
   if(i===0){const bar=s16*16;[root+12,root+19].forEach(m=>{mosc('sawtooth',mtof(m),t,0.5,L>=3?0.03:0.022,bar-0.4,null,L>=3?1100:650,-6);mosc('sawtooth',mtof(m),t,0.5,0.018,bar-0.4,null,650,7)})}
   if(L>=1||i%2===1)mnz(t,0.045,7500,'highpass',(i%4===2?0.06:0.03)*(L>=1?1:0.55));
   if(L>=2&&KICK[i])mosc('sine',150,t,0.002,0.85,0.3,40);
@@ -496,10 +526,10 @@ function musicTick(){
   const target=!musicOn?0:state==='pause'?0.12:state==='over'?0.25:0.42;
   MU.gain.setTargetAtTime(target,AC.currentTime,0.25);
   const want=state==='play'?(bossE?3:waveState==='fight'?2:1):0;
-  const s16=60/(mLevel>=3?124:108)/4;
+  const s16=60/(mLevel>=3?124:mLevel===0?84:108)/4;
   if(mNext<AC.currentTime-0.2)mNext=AC.currentTime+0.05;
   while(mNext<AC.currentTime+0.15){
-    if(mStep%8===0)mLevel=want;
+    if(mStep===0||(mStep===8&&want!==0&&mLevel!==0)){if(want===0&&mLevel!==0)mBar=0;mLevel=want}
     if(musicOn)playStep(mStep,mNext,s16);
     mNext+=s16;mStep=(mStep+1)%16;
     if(mStep===0){mBar++;if(mBar%8===0)genPhrase()}
@@ -984,9 +1014,10 @@ $('resumeBtn').addEventListener('click',resume);
 $('restartBtn').addEventListener('click',begin);
 function soundLabel(){$('soundBtn').textContent=muted?'SOUND OFF':'SOUND ON'}soundLabel();
 $('soundBtn').addEventListener('click',()=>{muted=!muted;store.set('lionel-muted',muted?'1':'0');if(MG)MG.gain.value=muted?0:0.6;soundLabel()});
-function musicLabel(){$('musicBtn').textContent=musicOn?'MUSIC ON':'MUSIC OFF'}musicLabel();
+function musicLabel(){$('musicBtn').textContent=musicOn?'MUSIC ON':'MUSIC OFF';$('tMusic').textContent=!AC?'PLAY THEME':musicOn?'MUSIC ON':'MUSIC OFF'}musicLabel();
 $('musicBtn').addEventListener('click',()=>{musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0');musicLabel()});
-$('ovTitle').addEventListener('pointerdown',()=>audioInit());
+$('tMusic').addEventListener('click',e=>{e.stopPropagation();if(!AC){musicOn=true;store.set('lionel-music','1');audioInit()}else{audioInit();musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0')}musicLabel()});
+['pointerdown','touchend','click'].forEach(ev=>$('ovTitle').addEventListener(ev,e=>{if(state==='title'&&!(e.target.closest&&e.target.closest('#tMusic'))){audioInit();musicLabel()}}));
 $('sens').addEventListener('input',e=>{sens=+e.target.value;store.set('lionel-sens',String(sens))});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseGame()});
 
