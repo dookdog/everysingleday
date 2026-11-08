@@ -177,6 +177,7 @@ label.sens input{width:150px;accent-color:var(--gold)}
       <button class="cta" id="resumeBtn">RESUME</button>
       <button class="ghost" id="restartBtn">RESTART</button>
       <button class="ghost" id="soundBtn">SOUND ON</button>
+      <button class="ghost" id="musicBtn">MUSIC ON</button>
     </div>
     <label class="sens" for="sens">AIM SPEED <input type="range" id="sens" min="0.4" max="2.2" step="0.05" value="1"></label>
   </div>
@@ -437,6 +438,7 @@ function audioInit(){
     const s=AC.createBufferSource();s.buffer=NB;s.loop=true;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=5200;f.Q.value=7;
     const g=AC.createGain();g.gain.value=0.035;const lfo=AC.createOscillator();lfo.frequency.value=7;const lg=AC.createGain();lg.gain.value=0.02;lfo.connect(lg).connect(g.gain);
     s.connect(f).connect(g).connect(MG);s.start();lfo.start();
+    setTimeout(musicInit,0);
   }catch(e){AC=null}
 }
 function nz(dur,f,q,g,type,f2,delay){if(!AC)return;const t=AC.currentTime+(delay||0),s=AC.createBufferSource();s.buffer=NB;const fl=AC.createBiquadFilter();fl.type=type||'lowpass';fl.frequency.setValueAtTime(f,t);if(f2)fl.frequency.exponentialRampToValueAtTime(f2,t+dur);fl.Q.value=q;const gn=AC.createGain();gn.gain.setValueAtTime(g,t);gn.gain.exponentialRampToValueAtTime(0.001,t+dur);s.connect(fl).connect(gn).connect(MG);s.start(t,Math.random()*1.5);s.stop(t+dur+0.05)}
@@ -463,6 +465,51 @@ const SFX={
   chirp(){const b=R(2200,3600),n=2+Math.floor(Math.random()*3);for(let i=0;i<n;i++)tn(b,b+R(500,1200),0.08,'sine',0.045,i*0.11)}
 };
 setInterval(()=>{if(AC&&(state==='play'||state==='title')&&Math.random()<0.35)SFX.chirp()},1400);
+
+/* ---------- music: generative jungle score, A minor pentatonic ---------- */
+let MU=null,musicOn=store.get('lionel-music','1')==='1',mStep=0,mNext=0,mBar=0,mLevel=0,phrase=[];
+const PENTA=[0,3,5,7,10],PROG=[0,0,-4,-2],mtof=m=>440*Math.pow(2,(m-69)/12);
+const KICK=[1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0],TOM=[0,0,0,1,0,0,0,2,0,0,1,1,0,0,2,0],BASS=[1,0,0,1,0,0,1,0,1,0,0,0,1,0,1,0];
+function genPhrase(){phrase=[];let deg=5+Math.floor(Math.random()*3);
+  for(let b=0;b<4;b++){const bar=[];for(let i=0;i<16;i++){const p=i%4===0?0.55:i%2===0?0.32:0.12;
+    if(Math.random()<p){deg=clamp(deg+Math.floor(R(-2,3)),0,11);bar.push(deg)}else bar.push(-1)}phrase.push(bar)}}
+function mosc(type,f,t,a,peak,d,f2,filt,det){const o=AC.createOscillator();o.type=type;o.frequency.setValueAtTime(f,t);if(det)o.detune.value=det;
+  if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+a+d);const g=AC.createGain();g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+a+d);
+  let n=o;if(filt){const fl=AC.createBiquadFilter();fl.type='lowpass';fl.frequency.value=filt;o.connect(fl);n=fl}n.connect(g).connect(MU);o.start(t);o.stop(t+a+d+0.05)}
+function mnz(t,d,f,type,g){const s=AC.createBufferSource();s.buffer=NB;const fl=AC.createBiquadFilter();fl.type=type;fl.frequency.value=f;const gn=AC.createGain();
+  gn.gain.setValueAtTime(g,t);gn.gain.exponentialRampToValueAtTime(0.0001,t+d);s.connect(fl).connect(gn).connect(MU);s.start(t,Math.random()*1.5);s.stop(t+d+0.05)}
+function playStep(i,t,s16){
+  const L=mLevel,root=45+PROG[mBar%4];
+  if(i===0){const bar=s16*16;[root+12,root+19].forEach(m=>{mosc('sawtooth',mtof(m),t,0.5,L>=3?0.03:0.022,bar-0.4,null,L>=3?1100:650,-6);mosc('sawtooth',mtof(m),t,0.5,0.018,bar-0.4,null,650,7)})}
+  if(L>=1||i%2===1)mnz(t,0.045,7500,'highpass',(i%4===2?0.06:0.03)*(L>=1?1:0.55));
+  if(L>=2&&KICK[i])mosc('sine',150,t,0.002,0.85,0.3,40);
+  else if(L===1&&(i===0||i===8))mosc('sine',130,t,0.002,0.45,0.28,40);
+  if(L>=2&&TOM[i]){const f=TOM[i]===1?118:176;mosc('sine',f,t,0.002,0.4,0.22,f*0.62);mnz(t,0.03,2500,'bandpass',0.12)}
+  if(L>=3&&i%2===0){mosc('sine',78,t,0.002,0.5,0.25,48);if(i%8===4)mnz(t,0.18,1200,'bandpass',0.3)}
+  if(L>=1&&BASS[i]){const f=mtof(root-12+(i===14?7:0));mosc('triangle',f,t,0.008,0.32,s16*3);mosc('sawtooth',f,t,0.008,0.06,s16*2.5,null,380)}
+  if(L>=3&&(i===0||i===6||i===10)){[12,15,19].forEach(o=>mosc('sawtooth',mtof(root+o),t,0.01,0.05,s16*1.6,null,1400))}
+  const d=phrase[mBar%4]&&phrase[mBar%4][i];
+  if(d>=0&&!(L===0&&i%4!==0)){const f=mtof(57+12*Math.floor(d/5)+PENTA[d%5]);mosc('sine',f,t,0.003,L>=2?0.13:0.17,0.45);mosc('sine',f*4,t,0.001,0.035,0.07)}
+}
+function musicTick(){
+  if(!AC||!MU)return;
+  const target=!musicOn?0:state==='pause'?0.12:state==='over'?0.25:0.42;
+  MU.gain.setTargetAtTime(target,AC.currentTime,0.25);
+  const want=state==='play'?(bossE?3:waveState==='fight'?2:1):0;
+  const s16=60/(mLevel>=3?124:108)/4;
+  if(mNext<AC.currentTime-0.2)mNext=AC.currentTime+0.05;
+  while(mNext<AC.currentTime+0.15){
+    if(mStep%8===0)mLevel=want;
+    if(musicOn)playStep(mStep,mNext,s16);
+    mNext+=s16;mStep=(mStep+1)%16;
+    if(mStep===0){mBar++;if(mBar%8===0)genPhrase()}
+  }
+}
+function musicInit(){
+  if(!AC||MU)return;
+  MU=AC.createGain();MU.gain.value=0;const comp=AC.createDynamicsCompressor();MU.connect(comp).connect(AC.destination);
+  genPhrase();mNext=AC.currentTime+0.1;setInterval(musicTick,25);
+}
 
 /* ---------- weapons ---------- */
 const WEAP=[
@@ -937,6 +984,9 @@ $('resumeBtn').addEventListener('click',resume);
 $('restartBtn').addEventListener('click',begin);
 function soundLabel(){$('soundBtn').textContent=muted?'SOUND OFF':'SOUND ON'}soundLabel();
 $('soundBtn').addEventListener('click',()=>{muted=!muted;store.set('lionel-muted',muted?'1':'0');if(MG)MG.gain.value=muted?0:0.6;soundLabel()});
+function musicLabel(){$('musicBtn').textContent=musicOn?'MUSIC ON':'MUSIC OFF'}musicLabel();
+$('musicBtn').addEventListener('click',()=>{musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0');musicLabel()});
+$('ovTitle').addEventListener('pointerdown',()=>audioInit());
 $('sens').addEventListener('input',e=>{sens=+e.target.value;store.set('lionel-sens',String(sens))});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseGame()});
 
