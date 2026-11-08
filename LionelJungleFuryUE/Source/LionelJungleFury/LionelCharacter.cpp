@@ -29,6 +29,20 @@ ALionelCharacter::ALionelCharacter()
 	Camera->bUsePawnControlRotation = true;
 	Camera->SetFieldOfView(100.f);
 
+	// Cinematic grade: warm golden light, lush saturation, soft bloom and vignette.
+	FPostProcessSettings& PP = Camera->PostProcessSettings;
+	PP.bOverride_BloomIntensity = true;            PP.BloomIntensity = 0.9f;
+	PP.bOverride_VignetteIntensity = true;         PP.VignetteIntensity = 0.45f;
+	PP.bOverride_ColorSaturation = true;           PP.ColorSaturation = FVector4(1.15f, 1.12f, 1.05f, 1.f);
+	PP.bOverride_ColorContrast = true;             PP.ColorContrast = FVector4(1.06f, 1.06f, 1.06f, 1.f);
+	PP.bOverride_ColorGain = true;                 PP.ColorGain = FVector4(1.04f, 1.f, 0.93f, 1.f);
+	PP.bOverride_AutoExposureBias = true;          PP.AutoExposureBias = 0.4f;
+	PP.bOverride_LensFlareIntensity = true;        PP.LensFlareIntensity = 0.35f;
+	PP.bOverride_AmbientOcclusionIntensity = true; PP.AmbientOcclusionIntensity = 0.65f;
+	PP.bOverride_FilmGrainIntensity = true;        PP.FilmGrainIntensity = 0.05f;
+	PP.bOverride_SceneFringeIntensity = true;      PP.SceneFringeIntensity = 0.5f;
+	Camera->PostProcessBlendWeight = 1.f;
+
 	ViewRoot = CreateDefaultSubobject<USceneComponent>(TEXT("ViewRoot"));
 	ViewRoot->SetupAttachment(Camera);
 	ViewRoot->SetRelativeLocation(FVector(46.f, 22.f, -23.f));
@@ -507,6 +521,9 @@ void ALionelCharacter::Fire()
 			ShootRay(Dir, W);
 		}
 		MuzzleT = 0.05f;
+		// Brass (or a red shotgun shell) tumbles out of the ejection port and bounces for real.
+		GM->FX->Casing(Camera->GetComponentTransform().TransformPosition(FVector(55.f, 24.f, -14.f)),
+			Camera->GetRightVector() * JW::Rand(180.f, 280.f) + FVector(0.f, 0.f, JW::Rand(150.f, 240.f)) + GetVelocity(), W.Pellets > 1);
 		break;
 	case EWeaponKind::Proj:
 	{
@@ -554,6 +571,7 @@ void ALionelCharacter::Melee(const FWeaponDef& W)
 		bHit = true;
 	}
 	if (bHit) { Shake += 0.12f; }
+	GM->PushProps(GetActorLocation() + Fwd * 150.f, 230.f, 650.f);
 }
 
 void ALionelCharacter::ShootRay(const FVector& Dir, const FWeaponDef& W)
@@ -578,6 +596,14 @@ void ALionelCharacter::ShootRay(const FVector& Dir, const FWeaponDef& W)
 		}
 		Impact = Hit.ImpactPoint;
 		GM->FX->Burst(Hit.ImpactPoint, W.Pellets > 1 ? 1 : 4, JW::Hex(0x7a6a48), 300.f, 10.f, 0.5f, 1200.f, 150.f);
+		if (UPrimitiveComponent* HC = Hit.GetComponent())
+		{
+			if (HC->IsSimulatingPhysics())
+			{
+				// Light objects fly, heavy blocks barely budge.
+				HC->AddImpulseAtLocation(Dir * FMath::Clamp(W.Dmg * 10.f, 150.f, 900.f) * FMath::Min(HC->GetMass(), 60.f), Hit.ImpactPoint);
+			}
+		}
 		break;
 	}
 	GM->FX->Tracer(MuzzleWorld(), Impact, JW::Hex(W.Tracer), W.Thick * JW::M, W.bPierce ? 0.22f : 0.07f);

@@ -7,6 +7,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
+#include "Engine/StaticMeshActor.h"
 
 namespace
 {
@@ -182,10 +183,11 @@ void AJungleEnemy::TakeHit(float Damage, const FVector& Dir, float Knockback)
 	if (HP <= 0.f)
 	{
 		bAlive = false;
-		Dying = 0.5f;
+		Dying = 0.05f;
 		HitSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SetFlash(false);
 		if (GM) { GM->EnemyKilled(this); }
+		Shatter(Dir);
 	}
 	else if (GM)
 	{
@@ -262,7 +264,12 @@ void AJungleEnemy::Tick(float Dt)
 	const FVector2D Old = Pos;
 	Pos += (Mv * Sp + Knock) * Dt;
 	Knock *= FMath::Exp(-Dt * 6.f);
-	if (!bFly) { GM->Collide(Pos, Rad, Z + 0.5f); }
+	if (!bFly)
+	{
+		GM->Collide(Pos, Rad, Z + 0.5f);
+		const float Shove = bBoss ? 900.f : (Type == EEnemyType::Brute ? 500.f : 160.f);
+		GM->PushProps(FVector(Pos.X, Pos.Y, Z + 0.5f) * JW::M, (Rad + 0.6f) * JW::M, Shove * Dt * 8.f);
+	}
 	if (!bFly && JW::FloorH(Pos.X, Pos.Y) - Z > 1.2f) { Pos = Old; }
 	Z = bFly ? FMath::Max(JW::Hgt(Pos.X, Pos.Y), JW::Water) + 2.6f + FMath::Sin(T * 2.2f) * 0.35f : JW::FloorH(Pos.X, Pos.Y);
 
@@ -322,4 +329,34 @@ void AJungleEnemy::Tick(float Dt)
 			GM->Sfx(ESfx::Roar);
 		}
 	}
+}
+
+void AJungleEnemy::Shatter(const FVector& Dir)
+{
+	AJungleGameMode* GM = AJungleGameMode::Get(this);
+	if (!GM) { return; }
+	const bool bMobile = (PLATFORM_IOS || PLATFORM_ANDROID) != 0;
+	const FVector C = Center();
+	FVector Push = Dir;
+	if (Push.IsNearlyZero())
+	{
+		if (ALionelCharacter* P = GM->Player()) { Push = (C - P->GetActorLocation()).GetSafeNormal(); }
+	}
+	for (UStaticMeshComponent* Part : FlashParts)
+	{
+		const FTransform Xf = Part->GetComponentTransform();
+		const FVector S = Xf.GetScale3D();
+		if (S.GetMin() < (bMobile ? 0.1f : 0.05f) && !bBoss) { continue; }   // skip eyes and tiny trim
+		const float Vol = (float)(S.X * S.Y * S.Z);
+		const float Mass = FMath::Clamp(Vol * 450.f, 0.5f, bBoss ? 2500.f : 250.f);
+		AStaticMeshActor* D = GM->SpawnProp(Part->GetStaticMesh(), Part->GetMaterial(0), S, Xf.GetLocation(), Xf.Rotator(), Mass,
+			bMobile ? 4.f : JW::Rand(7.f, 10.f), true);
+		if (!D) { continue; }
+		UStaticMeshComponent* DC = D->GetStaticMeshComponent();
+		const FVector Out = (Xf.GetLocation() - C).GetSafeNormal();
+		const float Burst = bBoss ? 0.6f : 1.f;
+		DC->SetPhysicsLinearVelocity((Out * JW::Rand(200.f, 500.f) + Push * JW::Rand(150.f, 450.f) + FVector(0.f, 0.f, JW::Rand(150.f, 420.f))) * Burst);
+		DC->SetPhysicsAngularVelocityInDegrees(FMath::VRand() * JW::Rand(90.f, 540.f));
+	}
+	Body->SetVisibility(false, true);
 }

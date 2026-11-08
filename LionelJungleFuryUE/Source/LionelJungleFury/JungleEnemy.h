@@ -68,4 +68,6 @@ private:
 	void BuildBoss();
 	void FireOrb(const FVector2D& Offset);
 	void SetFlash(bool bOn);
+	/** Breaks the body into real-time physics debris flung away from the killing blow. */
+	void Shatter(const FVector& Dir);
 };

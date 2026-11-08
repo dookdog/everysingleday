@@ -11,6 +11,26 @@ The project has **no binary assets**. Everything is built from C++ when the game
 
 You don't need to import any assets or set up any levels. Open the project and press Play.
 
+## The jungle
+
+- **Golden-hour light.** A low warm sun throws long shadows and light shafts through the canopy.
+- **Real-time volumetric fog.** Two layers: a green haze between the trees and a low mist pooling on the ground and river. Sunbeams, brazier fire, explosions and glowing flowers all light up the fog.
+- **Flowers everywhere:**
+  - meadows of jungle daisies in white, pink, yellow, violet and coral
+  - tall red and orange heliconias, and hibiscus bushes in bloom
+  - lily pads and pink lotus on the river, and orchids climbing the kapok trunks
+  - blossoming pink, purple and orange trees, with fallen petals carpeting the ground beneath
+  - glowing blue flowers ringing the temple
+  - flowers overgrowing the temple steps
+- **Ambient life.** Butterflies (blue morpho, monarch, sulphur, white, scarlet) flit between flower patches. Petals drift on the breeze and fireflies hover in the undergrowth. Thick grass covers the ground.
+- **A cinematic camera grade.** Warm tones, rich saturation, bloom, a soft vignette, a light lens flare and film grain.
+
+## Real-time physics
+
+- **Props.** Supply crates, terracotta urns, fallen temple blocks and coconuts all simulate. Shoot them and they tumble; light objects fly and heavy stone barely moves. Coconut explosions throw everything nearby. Mud golems and the Colossus shove crates aside as they walk, and Lionel can kick things with the machete or by walking into them.
+- **Enemies shatter.** When an enemy dies, its body breaks into real physics pieces flung away from the killing blow. The pieces bounce down the temple steps and can be shot again.
+- **Shell casings.** Every pistol, SMG and shotgun shot ejects a brass casing (a red shell for the shotgun) that bounces and rolls on the stone.
+
 ## What's in the game
 
 - **Weapons.** You start with the Machete, Jaguar .45 and Monsoon SMG. Clearing waves 1 to 4 unlocks the Rhino Boomstick, Viper Crossbow, Coconut Launcher and Storm Totem.
@@ -77,7 +97,10 @@ The game is set to landscape only. The HUD keeps clear of the notch and the home
 | Weapon damage, fire rate, magazine sizes | `GWeapons` table in `JungleTypes.cpp` |
 | Enemy health, speed, damage | `Build*` functions in `JungleEnemy.cpp` |
 | Wave sizes, unlocks, drops | `StartWave`, `WaveClear` and `EnemyKilled` in `JungleGameMode.cpp` |
-| Fog thickness, sunlight | `BuildWorld` in `JungleGameMode.cpp` (`SetFogDensity`, `SetIntensity`) |
+| Fog thickness, sun angle and color, ground mist | `BuildSky` in `JungleWorld.cpp` |
+| How many flowers, grass and butterflies | `BuildFlowers`, `BuildJungle` and `BuildLife` in `JungleWorld.cpp` (`Density` scales them all; it is 0.35 on phones) |
+| Physics props, masses, push strength | `BuildProps` in `JungleWorld.cpp`, `SpawnProp` and `Explode` in `JungleGameMode.cpp` |
+| Color grade, bloom, vignette | Constructor of `LionelCharacter.cpp` |
 | Movement feel | Constructor of `LionelCharacter.cpp` |
 | Music and sound effects | `JungleSynthCore.h` |
 | HUD layout | `JungleHUD.cpp` |
@@ -87,7 +110,8 @@ The game is set to landscape only. The HUD keeps clear of the notch and the home
 | File | Role |
 |---|---|
 | `JungleTypes.*` | Weapon table, terrain math, shape and material helpers |
-| `JungleGameMode.*` | Builds the world; runs waves, score, pause and game over |
+| `JungleWorld.*` | Sky, fog, terrain, temple, trees, flowers, physics props, butterflies and petals |
+| `JungleGameMode.*` | Runs waves, score, pause and game over; spawns physics bodies and explosions |
 | `LionelCharacter.*` | First-person movement, weapons, viewmodels, recoil |
 | `LionelPlayerController.*` | Touch twin-stick, keyboard, mouse, gamepad, menu taps |
 | `JungleEnemy.*` | The four enemy types and their AI |
@@ -100,4 +124,5 @@ The game is set to landscape only. The HUD keeps clear of the notch and the home
 - **The synthesizer was compiled and run outside Unreal.** It rendered the intro, combat and boss music and every sound effect with no clipping, at about 0.5% of one CPU core.
 - **The game code was checked with a stand-in for the Unreal API.** Every source file was compiled with strict warnings against that stand-in, which catches typos, wrong names and C++ mistakes.
 - **It has not been compiled against the real engine.** It was written in a cloud environment without Unreal Engine installed. The first build on your machine may report small API differences, especially between engine versions. If it does, the first error message is usually enough to fix it.
-- **Visual tuning is a best first guess.** Fog density, light intensity and UI sizes may need adjusting by eye.
+- **Visual tuning is a best first guess.** Fog density, light intensity, flower counts and UI sizes may need adjusting by eye.
+- **Performance.** On a desktop GPU the flower and grass counts are high: about 60,000 instanced pieces with distance culling. If the frame rate drops, lower `Density` in `JungleWorld.cpp`. Volumetric fog and the glowing-flower lights are switched off on phones.

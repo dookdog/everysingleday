@@ -6,6 +6,7 @@
 #include "Components/PointLightComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
+#include "Engine/StaticMeshActor.h"
 
 // ============================================================================================
 // Projectile
@@ -187,6 +188,7 @@ void AJungleFX::BeginPlay()
 	Light->SetIntensityUnits(ELightUnits::Unitless);
 	Light->SetAttenuationRadius(2200.f);
 	Light->SetCastShadows(false);
+	Light->VolumetricScatteringIntensity = 2.f;   // explosions light up the mist
 	Light->RegisterComponent();
 	Light->SetIntensity(0.f);
 }
@@ -234,6 +236,23 @@ void AJungleFX::Flash(const FVector& At, const FLinearColor& Color, float Intens
 	LightI = Intensity;
 	LightT = LightDur = Duration;
 	Light->SetIntensity(Intensity);
+}
+
+void AJungleFX::Casing(const FVector& At, const FVector& Velocity, bool bShotgunShell)
+{
+	AJungleGameMode* GM = AJungleGameMode::Get(this);
+	if (!GM) { return; }
+	AStaticMeshActor* A = GM->SpawnProp(EShape::Cylinder, JW::Hex(bShotgunShell ? 0xb3201a : 0xd8a43a),
+		bShotgunShell ? FVector(0.04f, 0.04f, 0.07f) : FVector(0.022f, 0.022f, 0.055f), At,
+		FRotator(0.f, JW::Rand(0.f, 360.f), 90.f), bShotgunShell ? 0.04f : 0.02f, 3.f, true);
+	if (!A) { return; }
+	UStaticMeshComponent* MC = A->GetStaticMeshComponent();
+	MC->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+	MC->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	MC->SetUseCCD(true);
+	MC->SetCastShadow(false);
+	MC->SetPhysicsLinearVelocity(Velocity);
+	MC->SetPhysicsAngularVelocityInDegrees(FMath::VRand() * 720.f);
 }
 
 void AJungleFX::Tick(float Dt)

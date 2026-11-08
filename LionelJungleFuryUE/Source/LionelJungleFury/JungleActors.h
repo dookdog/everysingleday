@@ -63,6 +63,8 @@ public:
 	void Burst(const FVector& At, int32 Count, const FLinearColor& Color, float Speed, float Size, float Life, float Gravity = 1400.f, float Up = 0.f);
 	void Tracer(const FVector& A, const FVector& B, const FLinearColor& Color, float Thick, float Life);
 	void Flash(const FVector& At, const FLinearColor& Color, float Intensity, float Duration);
+	/** Ejects a physics-simulated shell casing (cm, cm/s). */
+	void Casing(const FVector& At, const FVector& Velocity, bool bShotgunShell);
 
 private:
 	struct FParticle { FVector P; FVector V; float Life = 0.f; float Max = 1.f; float Size = 0.f; float Grav = 0.f; FRotator Spin; };
