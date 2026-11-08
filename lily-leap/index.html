@@ -53,6 +53,9 @@ h2{font-size:clamp(34px,8vw,48px)}
 <div id="probe"></div>
 
 <div class="topbtns" id="topbtns" hidden>
+  <button class="iconbtn" id="musicBtn" aria-label="Music on" title="Music">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17V6l10-2v11"/><circle cx="6.5" cy="17" r="2.6" fill="currentColor"/><circle cx="16.5" cy="15" r="2.6" fill="currentColor"/><path id="musicSlash" d="M3.5 3.5l17 17" hidden/></svg>
+  </button>
   <button class="iconbtn" id="soundBtn" aria-label="Sound on" title="Sound">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path id="soundWaves" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
   </button>
@@ -266,6 +269,7 @@ function loadLevel(n) {
   Object.assign(tongue, { state: 0, len: 0, fly: null, caught: null, cd: 0 });
   particles = []; texts = []; ripples = [];
   levelTime = 0; combo = 0;
+  music.bpm = 100 + Math.min(n - 1, 6) * 4;
   camX = frog.x - viewW * 0.42; camY = restCamY();
   updateFlies(0);
 }
@@ -278,6 +282,9 @@ function ensureAudio() {
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
       master = AC.createGain(); master.gain.value = muted ? 0 : 0.9; master.connect(AC.destination);
+      music.gain = AC.createGain(); music.gain.gain.value = 0; music.gain.connect(master);
+      music.noise = AC.createBuffer(1, Math.floor(AC.sampleRate * 0.12), AC.sampleRate);
+      const nd = music.noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nd.length, 3);
     } catch (e) { AC = null; }
   }
   if (AC && AC.state === 'suspended') AC.resume();
@@ -321,6 +328,84 @@ function setMuted(m) {
   try { localStorage.setItem('lilyleap.muted', m ? '1' : '0'); } catch (e) {}
 }
 setMuted(muted);
+
+/* ---------- music: a looping 8-bar garden tune, synthesized and scheduled ahead ---------- */
+const music = { on: true, playing: false, step: 0, next: 0, timer: null, gain: null, noise: null, bpm: 100 };
+try { music.on = localStorage.getItem('lilyleap.music') !== '0'; } catch (e) {}
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+// melody per bar: [step(16ths), midi note, length in 16ths]
+const MELODY = [
+  [[0, 72, 2], [2, 76, 2], [4, 79, 3], [8, 76, 2], [10, 72, 2], [12, 74, 4]],
+  [[0, 76, 2], [2, 72, 2], [4, 69, 3], [8, 72, 2], [10, 69, 2], [12, 67, 4]],
+  [[0, 69, 2], [2, 72, 2], [4, 77, 3], [8, 76, 2], [10, 74, 2], [12, 72, 4]],
+  [[0, 74, 3], [3, 71, 1], [4, 67, 2], [6, 71, 2], [8, 74, 4], [12, 79, 4]],
+  [[0, 79, 2], [2, 76, 2], [4, 72, 2], [6, 76, 2], [8, 79, 3], [11, 81, 1], [12, 79, 4]],
+  [[0, 81, 2], [2, 79, 2], [4, 76, 4], [8, 72, 2], [10, 74, 2], [12, 76, 4]],
+  [[0, 77, 2], [2, 76, 2], [4, 74, 2], [6, 72, 2], [8, 74, 2], [10, 71, 2], [12, 67, 4]],
+  [[0, 72, 6], [8, 67, 2], [10, 69, 2], [12, 71, 2], [14, 74, 2]],
+];
+// chords per half-bar: [bass root, pad notes]
+const C_ = [48, [60, 64, 67]], Am = [45, [57, 60, 64]], F_ = [41, [57, 60, 65]], G_ = [43, [59, 62, 67]];
+const CHORDS = [[C_, C_], [Am, Am], [F_, F_], [G_, G_], [C_, C_], [Am, Am], [F_, G_], [C_, C_]];
+
+function mNote(freq, t, dur, type, vol, attack = 0.008) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(music.gain); o.start(t); o.stop(t + dur + 0.05);
+}
+function mShaker(t, vol) {
+  const s = AC.createBufferSource(); s.buffer = music.noise;
+  const f = AC.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 6000;
+  const g = AC.createGain(); g.gain.value = vol;
+  s.connect(f); f.connect(g); g.connect(music.gain); s.start(t);
+}
+function playStep(step, t, sd) {
+  const bar = Math.floor(step / 16), s = step % 16;
+  for (const [st, m, len] of MELODY[bar]) if (st === s) {
+    const d = len * sd * 0.95 + 0.12;
+    mNote(mtof(m), t, d, 'triangle', 0.16);
+    mNote(mtof(m + 12), t, d * 0.5, 'sine', 0.05);
+  }
+  const [root, pad] = CHORDS[bar][s < 8 ? 0 : 1];
+  if (s === 0 || s === 8) {
+    for (const m of pad) { mNote(mtof(m), t, sd * 8.5, 'sine', 0.035, 0.12); mNote(mtof(m) * 1.004, t, sd * 8.5, 'sine', 0.02, 0.12); }
+    mNote(mtof(root), t, sd * 3.5, 'sine', 0.22, 0.01);
+    mNote(110, t, 0.12, 'sine', 0.12, 0.003);   // soft kick
+  }
+  if (s === 6 || s === 14) mNote(mtof(root + 12), t, sd * 1.6, 'sine', 0.12);
+  if (s === 4 || s === 12) mNote(mtof(root + 7), t, sd * 1.6, 'sine', 0.1);
+  if (s % 4 === 2) mShaker(t, 0.09); else if (s % 2 === 1) mShaker(t, 0.035);
+}
+function musicTick() {
+  if (!AC || !music.playing) return;
+  const sd = 60 / music.bpm / 4;
+  if (music.next < AC.currentTime - 0.2) music.next = AC.currentTime + 0.05;
+  while (music.next < AC.currentTime + 0.15) {
+    playStep(music.step, music.next, sd);
+    music.next += sd; music.step = (music.step + 1) % 128;
+  }
+}
+function musicStart() {
+  if (!AC || !music.on || music.playing) return;
+  music.playing = true; music.next = AC.currentTime + 0.08;
+  const g = music.gain.gain; g.cancelScheduledValues(AC.currentTime); g.setValueAtTime(g.value, AC.currentTime); g.linearRampToValueAtTime(0.6, AC.currentTime + 0.4);
+  musicTick(); music.timer = setInterval(musicTick, 25);
+}
+function musicStop() {
+  if (!music.playing) return;
+  music.playing = false; clearInterval(music.timer); music.timer = null;
+  if (AC) { const g = music.gain.gain; g.cancelScheduledValues(AC.currentTime); g.setValueAtTime(g.value, AC.currentTime); g.linearRampToValueAtTime(0, AC.currentTime + 0.3); }
+}
+function syncMusic() { (state === 'play' && music.on) ? musicStart() : musicStop(); }
+function setMusic(on) {
+  music.on = on;
+  $('musicSlash').hidden = on;
+  $('musicBtn').setAttribute('aria-label', on ? 'Music on' : 'Music off');
+  try { localStorage.setItem('lilyleap.music', on ? '1' : '0'); } catch (e) {}
+  syncMusic();
+}
+setMusic(music.on);
 
 /* ---------- input ---------- */
 const keys = { left: false, right: false, jump: false, tongue: false };
@@ -370,7 +455,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && sta
 
 /* ---------- screens ---------- */
 const screens = ['titleScreen', 'pauseScreen', 'clearScreen', 'overScreen'];
-function show(id) { for (const s of screens) $(s).hidden = s !== id; $('topbtns').hidden = !(state === 'play'); }
+function show(id) { for (const s of screens) $(s).hidden = s !== id; $('topbtns').hidden = !(state === 'play'); syncMusic(); }
 function updateBestLine() {
   const touchy = matchMedia('(pointer: coarse)').matches;
   const kb = touchy ? '' : ' Keyboard: arrows or A/D, Space to hop, X to snap.';
@@ -393,6 +478,7 @@ $('resumeBtn').addEventListener('click', () => { ensureAudio(); resume(); });
 $('quitBtn').addEventListener('click', () => { saveBest(); toTitle(); });
 $('pauseBtn').addEventListener('click', () => { if (state === 'play') pause(); });
 $('soundBtn').addEventListener('click', () => { ensureAudio(); setMuted(!muted); });
+$('musicBtn').addEventListener('click', () => { ensureAudio(); setMusic(!music.on); });
 $('nextBtn').addEventListener('click', () => {
   ensureAudio(); hearts = Math.min(3, hearts + 1); loadLevel(L.n + 1); state = 'play'; show(null);
 });
