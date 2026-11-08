@@ -127,10 +127,12 @@ namespace EverySingleDay.Player
 
         private void ReadInput()
         {
-            _moveInput = Input.GetAxisRaw("Horizontal");
-            _jumpHeld = Input.GetButton("Jump");
+            // Reads merged keyboard + on-screen touch input, so the same
+            // controller drives desktop and iOS/Android builds unchanged.
+            _moveInput = Systems.GameInput.Horizontal();
+            _jumpHeld = Systems.GameInput.JumpHeld();
 
-            if (Input.GetButtonDown("Jump"))
+            if (Systems.GameInput.JumpPressed())
                 _jumpBufferCounter = jumpBufferTime;
         }
 

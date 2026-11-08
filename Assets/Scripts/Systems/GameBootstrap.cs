@@ -96,6 +96,7 @@ namespace EverySingleDay.Systems
             AtmosphereController.Attach(Camera.main, _theme);
 
             RuntimeHUD.Create();
+            TouchControls.Create();   // on-screen controls on touch devices
             ShowIntroCard();
         }
 
