@@ -41,6 +41,20 @@ fonts = "<style>\n" + "\n".join([
     font_face("Nunito", "Nunito-latin.woff2", "700 900"),
 ]) + "\n</style>"
 
+# Message previews (e.g. tapping the file in iMessage) often show HTML without running scripts.
+# Without this, people would see the title card with a "Hop in" button that does nothing.
+noscript = """<noscript>
+<div class="overlay" style="z-index:50">
+  <div class="card">
+    <h2>Almost there!</h2>
+    <p class="tag">This preview can't run games. Open the file in a web browser to play Lily Leap.</p>
+    <p class="small">On a computer: double-click the file. On a phone: ask whoever sent it for the web link.</p>
+  </div>
+</div>
+</noscript>
+"""
+rest = noscript + rest
+
 doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
