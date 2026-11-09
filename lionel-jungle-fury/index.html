@@ -184,8 +184,10 @@ label.sens input{width:150px;accent-color:var(--gold)}
     <div class="row">
       <button class="cta" id="startBtn">ENTER THE JUNGLE</button>
       <button class="ghost" id="tMusic">PLAY THEME</button>
+      <button class="ghost" id="tMotion">MOTION LOOK OFF</button>
     </div>
     <div class="hint" id="hint"></div>
+    <div class="hint" id="motionTip" hidden>This viewer blocks the motion sensors. Open the game straight in Safari to turn by moving your phone.</div>
     <div class="best">BEST SCORE <span id="bestT">0</span></div>
   </div>
 </div>
@@ -199,7 +201,7 @@ label.sens input{width:150px;accent-color:var(--gold)}
       <button class="ghost" id="restartBtn">RESTART</button>
       <button class="ghost" id="soundBtn">SOUND ON</button>
       <button class="ghost" id="musicBtn">MUSIC ON</button>
-      <button class="ghost" id="gyroBtn">GYRO AIM OFF</button>
+      <button class="ghost" id="gyroBtn">MOTION LOOK OFF</button>
     </div>
     <label class="sens" for="sens">AIM SPEED <input type="range" id="sens" min="0.4" max="2.2" step="0.05" value="1"></label>
   </div>
@@ -1206,7 +1208,7 @@ let state='title', wave=0, waveState='break', waveTimer=0, queue=[], spawnT=0, s
 let cur=1, pend=1, swT=0, cooldown=0, reloading=false, reloadT=0, pendReload=false, swingT=0, vmKick=0, bobT=0, moveAmt=0, swayX=0, swayY=0;
 const SPR={p:new THREE.Vector3(),v:new THREE.Vector3(),r:new THREE.Vector3(),rv:new THREE.Vector3()};
 let slideT=0, pumpT=0, boltT=0, burstN=0, burstIdle=0, lastYaw=0, lastPitch=0, wasGround=true, landDip=0;
-let headPhase=0, headYaw=0, headRoll=0, turnAround=0, padHold=0, gyroOn=false, gyroLast=0;
+let headPhase=0, headYaw=0, headRoll=0, turnAround=0, padHold=0;
 const PITCH=1.55;
 let ads=false, adsT=0, lookPrevX=0, lookPrevY=0, lookAccX=0, lookAccY=0, assistK=1;
 let fireHeld=0, mouseDown=false, hurtT=0, shake=0, flashT=0, flashI=0, muzzleT=0, time=0;
@@ -1656,29 +1658,43 @@ $('resumeBtn').addEventListener('click',resume);
 $('restartBtn').addEventListener('click',begin);
 function soundLabel(){$('soundBtn').textContent=muted?'SOUND OFF':'SOUND ON'}soundLabel();
 $('soundBtn').addEventListener('click',()=>{muted=!muted;store.set('lionel-muted',muted?'1':'0');if(MG)MG.gain.value=muted?0:0.6;soundLabel()});
-function gyroLabel(t){$('gyroBtn').textContent=t||(gyroOn?'GYRO AIM ON':'GYRO AIM OFF')}
-function onMotion(e){
-  if(!gyroOn||state!=='play'||!e.rotationRate)return;
-  const now=performance.now(),dt=gyroLast?Math.min(0.05,(now-gyroLast)/1000):0;gyroLast=now;if(!dt)return;
-  const r=e.rotationRate,ang=(screen.orientation&&screen.orientation.angle)||window.orientation||0,D=Math.PI/180;
-  let yawR,pitR;
-  if(ang===90){yawR=r.beta;pitR=r.gamma}else if(ang===-90||ang===270){yawR=-r.beta;pitR=-r.gamma}else{yawR=r.gamma;pitR=r.beta}
-  const k=sens*(ads?0.7:1)*1.1;
-  P.yaw+=(yawR||0)*D*dt*k;P.pitch=clamp(P.pitch+(pitR||0)*D*dt*k,-PITCH,PITCH);
+/* ---------- motion look: the phone is your head ----------
+   Turn your body with the phone and Lionel turns with you, 1:1, all the way around; tilt it to look up and down.
+   Uses the absolute device orientation (no drift) and feeds frame-to-frame changes into the view, so touch,
+   stick and controller look still add on top. Needs motion access, which Safari grants on a normal web page. */
+const MOTION={on:false,have:false,lastYaw:0,lastPitch:0,q:new THREE.Quaternion(),e:new THREE.Euler(),f:new THREE.Vector3(),
+  q1:new THREE.Quaternion(-Math.sqrt(0.5),0,0,Math.sqrt(0.5)),qz:new THREE.Quaternion(),z:new THREE.Vector3(0,0,1)};
+function motionLabel(t){const l=t||(MOTION.on?'MOTION LOOK ON':'MOTION LOOK OFF');$('gyroBtn').textContent=l;$('tMotion').textContent=l}
+function onOrient(ev){
+  if(!MOTION.on||ev.alpha===null||ev.alpha===undefined)return;
+  const D=Math.PI/180,orient=((screen.orientation&&screen.orientation.angle)||window.orientation||0)*D;
+  MOTION.e.set(ev.beta*D,ev.alpha*D,-ev.gamma*D,'YXZ');MOTION.q.setFromEuler(MOTION.e);MOTION.q.multiply(MOTION.q1);
+  MOTION.q.multiply(MOTION.qz.setFromAxisAngle(MOTION.z,-orient));
+  const f=MOTION.f.set(0,0,-1).applyQuaternion(MOTION.q);
+  const yaw=Math.atan2(-f.x,-f.z),pitch=Math.asin(clamp(f.y,-1,1));
+  if(!MOTION.have){MOTION.have=true;MOTION.lastYaw=yaw;MOTION.lastPitch=pitch;return}
+  let dy=yaw-MOTION.lastYaw;dy=Math.atan2(Math.sin(dy),Math.cos(dy));const dp=pitch-MOTION.lastPitch;
+  MOTION.lastYaw=yaw;MOTION.lastPitch=pitch;
+  if(state!=='play'||Math.abs(f.y)>0.985)return;   // near straight up/down, yaw is unreliable: hold still
+  P.yaw+=dy;P.pitch=clamp(P.pitch+dp,-PITCH,PITCH);
 }
-$('gyroBtn').addEventListener('click',async()=>{
-  if(gyroOn){gyroOn=false;gyroLabel();return}
-  if(typeof DeviceMotionEvent==='undefined'){gyroLabel('NO MOTION SENSOR');return}
+async function enableMotion(){
+  // Must run inside a tap: iOS only shows the permission prompt for a user gesture.
+  if(MOTION.on){MOTION.on=false;motionLabel();return}
+  if(typeof DeviceOrientationEvent==='undefined'){motionLabel('NO MOTION SENSOR');return}
   try{
-    if(typeof DeviceMotionEvent.requestPermission==='function'){const res=await DeviceMotionEvent.requestPermission();if(res!=='granted'){gyroLabel('MOTION BLOCKED HERE');return}}
-    window.addEventListener('devicemotion',onMotion);gyroOn=true;gyroLast=0;gyroLabel();
-    setTimeout(()=>{if(gyroOn&&!gyroLast){gyroOn=false;gyroLabel('MOTION BLOCKED HERE')}},1500);
-  }catch(err){gyroLabel('MOTION BLOCKED HERE')}
-});
+    if(typeof DeviceOrientationEvent.requestPermission==='function'){const r=await DeviceOrientationEvent.requestPermission();if(r!=='granted'){motionLabel('MOTION NOT ALLOWED');return}}
+  }catch(err){motionLabel('MOTION BLOCKED HERE');showMotionTip();return}
+  MOTION.on=true;MOTION.have=false;window.addEventListener('deviceorientation',onOrient);motionLabel();
+  setTimeout(()=>{if(MOTION.on&&!MOTION.have){MOTION.on=false;motionLabel('MOTION BLOCKED HERE');showMotionTip()}},1500);
+}
+function showMotionTip(){$('motionTip').hidden=false}
+$('gyroBtn').addEventListener('click',enableMotion);
+$('tMotion').addEventListener('click',e=>{e.stopPropagation();enableMotion()});
 function musicLabel(){$('musicBtn').textContent=musicOn?'MUSIC ON':'MUSIC OFF';$('tMusic').textContent=!AC?'PLAY THEME':musicOn?'MUSIC ON':'MUSIC OFF'}musicLabel();
 $('musicBtn').addEventListener('click',()=>{musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0');musicLabel()});
 $('tMusic').addEventListener('click',e=>{e.stopPropagation();if(!AC){musicOn=true;store.set('lionel-music','1');audioInit()}else{audioInit();musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0')}musicLabel()});
-['pointerdown','touchend','click'].forEach(ev=>$('ovTitle').addEventListener(ev,e=>{if(state==='title'&&!(e.target.closest&&e.target.closest('#tMusic'))){audioInit();musicLabel()}}));
+['pointerdown','touchend','click'].forEach(ev=>$('ovTitle').addEventListener(ev,e=>{if(state==='title'&&!(e.target.closest&&e.target.closest('#tMusic,#tMotion'))){audioInit();musicLabel()}}));
 $('sens').addEventListener('input',e=>{sens=+e.target.value;store.set('lionel-sens',String(sens))});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseGame()});
 
