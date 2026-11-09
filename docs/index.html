@@ -265,6 +265,7 @@ label.sens input{width:150px;accent-color:var(--gold)}
       <button class="ghost" id="soundBtn">SOUND ON</button>
       <button class="ghost" id="musicBtn">MUSIC ON</button>
       <button class="ghost" id="gyroBtn">MOTION LOOK OFF</button>
+      <button class="ghost" id="steerBtn">STICK: TURN</button>
     </div>
     <label class="sens" for="sens">AIM SPEED <input type="range" id="sens" min="0.4" max="2.2" step="0.05" value="1"></label>
   </div>
@@ -294,7 +295,7 @@ if(!window.THREE){ $('hint').textContent='The 3D engine could not load. Check yo
 const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
 if(!isTouch) document.body.classList.add('desk');
 const HINT_BASE=isTouch
-  ? 'Left stick moves; push past the ring to sprint. Touch anywhere on the right to get a LOOK stick: small moves aim, push and hold to spin all the way around or look up and down. Double-tap to turn around. Fire with either thumb; AIM zooms the sights. Gyro aim is in the pause menu.'
+  ? 'Left stick: point it anywhere and Lionel turns to face that way and walks; push past the ring to sprint. Touch anywhere on the right to get a LOOK stick: small moves aim, push and hold to spin all the way around or look up and down. Double-tap to turn around. Fire with either thumb; AIM zooms the sights. Gyro aim is in the pause menu.'
   : 'WASD move · Shift sprint · C crouch / slide · Mouse aim · Click fire · Right-click aim · G grenade · V knife · Z streak reward · 1–7 weapons · R reload · Space jump · Esc pause';
 $('hint').textContent=HINT_BASE;
 
@@ -1651,7 +1652,8 @@ function collide(o,r,y){
   for(const ob of obs){const dx=o.x-ob.x,dz=o.z-ob.z,rr=ob.r+r,d2=dx*dx+dz*dz;if(d2<rr*rr&&y<ob.h-0.2){const d=Math.sqrt(d2)||0.001;o.x=ob.x+dx/d*rr;o.z=ob.z+dz/d*rr}}
   const a=Math.hypot(o.x,o.z);if(a>ARENA){o.x*=ARENA/a;o.z*=ARENA/a}
 }
-const joy={id:null,ox:0,oy:0,x:0,y:0,sprint:false};
+const joy={id:null,ox:0,oy:0,x:0,y:0,sprint:false,ref:0,last:0};
+let steer=store.get('lionel-steer','1')==='1';   // left stick turns Lionel to face where it points
 function footstep(){
   if(hgt(P.x,P.z)<WATER-0.15){SFX.step('water');burst(P.x,WATER+0.03,P.z,3,0xdcefe8,1.4,0.04,0.35,12,1.2);return}
   SFX.step(Math.max(Math.abs(P.x),Math.abs(P.z))<PYR[0]+0.2||Math.hypot(P.x,P.z)<12?'stone':'leaves');
@@ -1682,7 +1684,20 @@ function updLook(dt){
 }
 function updPlayer(dt){
   updLook(dt);
-  let mx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+joy.x+pad.mx, my=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0)+joy.y+pad.my;
+  // Turn-to-face stick: the direction you point is where Lionel faces and walks. Pull back and he turns around.
+  // The direction is measured from the view at the moment your thumb went down (plus any looking since),
+  // so holding "back" turns him around once instead of spinning forever.
+  let jx=joy.x,jy=joy.y;
+  if(steer&&joy.id!==null){
+    joy.ref+=P.yaw-joy.last;                                    // looking around re-aims the stick's "forward"
+    const m=Math.hypot(joy.x,joy.y);
+    if(m>0.12){const want=joy.ref-Math.atan2(joy.x,joy.y);let d=want-P.yaw;d=Math.atan2(Math.sin(d),Math.cos(d));
+      const step=clamp(d,-5.5*dt,5.5*dt);P.yaw+=step;   // turn at up to ~315°/s
+      jx=0;jy=m*Math.max(0.2,Math.cos(d-step))}                 // walk forward, easing in while still turning
+    else{jx=0;jy=0}
+    joy.last=P.yaw;
+  }
+  let mx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+jx+pad.mx, my=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0)+jy+pad.my;
   const m=Math.hypot(mx,my);if(m>1){mx/=m;my/=m}
   moveAmt=Math.min(1,m);
   const sy=Math.sin(P.yaw),cy=Math.cos(P.yaw);
@@ -1924,6 +1939,8 @@ async function enableMotion(){
 }
 function showMotionTip(){$('motionTip').hidden=false}
 $('gyroBtn').addEventListener('click',enableMotion);
+function steerLabel(){$('steerBtn').textContent=steer?'STICK: TURN TO FACE':'STICK: STRAFE'}steerLabel();
+$('steerBtn').addEventListener('click',()=>{steer=!steer;store.set('lionel-steer',steer?'1':'0');steerLabel()});
 $('tMotion').addEventListener('click',e=>{e.stopPropagation();enableMotion()});
 function musicLabel(){$('musicBtn').textContent=musicOn?'MUSIC ON':'MUSIC OFF';$('tMusic').textContent=!AC?'PLAY THEME':musicOn?'MUSIC ON':'MUSIC OFF'}musicLabel();
 $('musicBtn').addEventListener('click',()=>{musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0');musicLabel()});
@@ -1954,7 +1971,7 @@ play.addEventListener('touchstart',e=>{
     const el=t.target&&t.target.closest?t.target.closest('[data-btn]'):null,b=el&&el.dataset.btn;
     if(b==='fire'){T[t.identifier]={k:'look',x:t.clientX,y:t.clientY,fire:true,el};fireHeld++;el.classList.add('on')}
     else if(b){T[t.identifier]={k:'btn',el};if(b!=='ads')el.classList.add('on');press(b)}
-    else if(t.clientX<window.innerWidth*0.42&&joy.id===null){joy.id=t.identifier;joy.ox=t.clientX;joy.oy=t.clientY;T[t.identifier]={k:'joy'};placeJoy(t.clientX,t.clientY);jb.classList.add('on')}
+    else if(t.clientX<window.innerWidth*0.42&&joy.id===null){joy.id=t.identifier;joy.ox=t.clientX;joy.oy=t.clientY;joy.ref=joy.last=P.yaw;T[t.identifier]={k:'joy'};placeJoy(t.clientX,t.clientY);jb.classList.add('on')}
     else{T[t.identifier]={k:'look',x:t.clientX,y:t.clientY,ox:t.clientX,oy:t.clientY,stick:true,offX:0,offY:0};showLookStick(t.clientX,t.clientY);
       const now=performance.now();if(now-lastLookTap<280&&Math.hypot(t.clientX-lastTapX,t.clientY-lastTapY)<60&&turnAround<=0){turnAround=Math.PI;SPR.rv.y+=4}
       lastLookTap=now;lastTapX=t.clientX;lastTapY=t.clientY}
@@ -1981,7 +1998,7 @@ play.addEventListener('touchmove',e=>{
       // Analog with a dead zone and a soft response curve for fine aiming steps.
       const m=Math.min(L/JR,1),mm=m<0.12?0:(m-0.12)/0.88,c=mm*mm*0.35+mm*0.65;
       joy.x=L?dx/L*c:0;joy.y=L?-dy/L*c:0;
-      joy.sprint=L>JR*1.35&&-dy/L>0.7;jb.classList.toggle('sprint',joy.sprint);
+      joy.sprint=L>JR*1.35&&(steer||-dy/L>0.7);jb.classList.toggle('sprint',joy.sprint);
     }}
 },{passive:false});
 function tEnd(e){
