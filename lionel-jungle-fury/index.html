@@ -102,6 +102,10 @@ body.ads #cross b{width:5px;height:5px;left:-2.5px;top:-2.5px;box-shadow:0 0 0 1
 #wname{font-size:11px;letter-spacing:.2em;color:var(--gold)}
 #ammo{font-family:var(--display);font-size:26px;font-variant-numeric:tabular-nums;line-height:1.05}
 #rl{font-size:11px;letter-spacing:.2em;color:var(--jade)}
+#lookBase{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:1.5px solid rgba(111,227,168,.45);background:rgba(7,16,9,.22);pointer-events:none}
+#lookBase::after{content:"";position:absolute;inset:-22px;border-radius:50%;border:1.5px dashed rgba(111,227,168,.25)}
+#lookBase span{position:absolute;left:50%;top:-20px;transform:translateX(-50%);font-size:10px;font-weight:700;letter-spacing:.24em;color:var(--jade)}
+#lookKnob{position:absolute;left:50%;top:50%;width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;background:rgba(111,227,168,.32);border:1.5px solid rgba(111,227,168,.7)}
 #joyBase{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:1.5px solid rgba(239,230,207,.3);
   background:rgba(7,16,9,.25);pointer-events:none;opacity:.45;left:110px;bottom:auto}
 #joyBase.on{opacity:1}
@@ -129,10 +133,18 @@ body.desk #bFire,body.desk #bJump,body.desk #bReload,body.desk #joyBase,body.des
 body.desk .ammoBox{bottom:0}
 body.pad #bFire,body.pad #bJump,body.pad #bReload,body.pad #joyBase,body.pad #bAds,body.pad #bFireL,body.pad #bCrouch,body.pad #bNade,body.pad #bMelee{display:none}
 body.pad .ammoBox{bottom:0}
-@media (orientation:portrait){#bFireL{left:150px;bottom:250px}}
 @media (orientation:portrait){
-  #strip{bottom:214px}
-  .slot{width:42px}
+  .slot{width:40px}
+  #strip{top:226px;bottom:auto}
+  .br{width:100%}
+  .ammoBox{bottom:256px}
+  #bFireL{left:4px;bottom:300px}
+  #bNade{right:22px;bottom:182px}
+  #bMelee{right:100px;bottom:140px}
+  #bCrouch{right:98px;bottom:196px;width:52px;height:52px}
+  #bReload{right:104px;bottom:74px}
+  #bJump{right:110px;bottom:2px}
+  #bStreak{top:274px;bottom:auto;left:auto;right:0}
 }
 
 /* overlays */
@@ -176,6 +188,7 @@ label.sens input{width:150px;accent-color:var(--gold)}
   <div id="xpbar"><div id="xpfill"></div><span id="lvl">LV 1</span></div>
   <div id="flare" aria-hidden="true"><i class="veil"></i><i class="glare"></i><i class="streak"></i><i class="gh"></i><i class="gh"></i><i class="gh hex"></i><i class="gh"></i><i class="gh hex"></i><i class="gh ring"></i><i class="gh"></i></div>
   <div id="joyBase"><div id="joyKnob"></div></div>
+  <div id="lookBase" hidden><div id="lookKnob"></div><span>LOOK</span></div>
   <div id="cross"><i></i><i></i><i></i><i></i><b></b></div>
   <div id="hitm"></div>
   <div id="pop"></div>
@@ -268,7 +281,7 @@ if(!window.THREE){ $('hint').textContent='The 3D engine could not load. Check yo
 const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
 if(!isTouch) document.body.classList.add('desk');
 const HINT_BASE=isTouch
-  ? 'Left stick moves in any direction; push past the ring to sprint. Drag the right side to look all the way around, or hold your thumb at the right edge to keep turning. Double-tap to turn around. Fire with either thumb; AIM zooms the sights. Gyro aim is in the pause menu.'
+  ? 'Left stick moves; push past the ring to sprint. Touch anywhere on the right to get a LOOK stick: small moves aim, push and hold to spin all the way around or look up and down. Double-tap to turn around. Fire with either thumb; AIM zooms the sights. Gyro aim is in the pause menu.'
   : 'WASD move · Shift sprint · C crouch / slide · Mouse aim · Click fire · Right-click aim · G grenade · V knife · Z streak reward · 1–7 weapons · R reload · Space jump · Esc pause';
 $('hint').textContent=HINT_BASE;
 
@@ -1646,11 +1659,10 @@ function updLook(dt){
   P.yaw-=dx*k;P.pitch=clamp(P.pitch-dy*k*0.85,-PITCH,PITCH);swayX+=dx*0.02;swayY+=dy*0.02;
   // Quick 180° turn (double-tap on the look side), eased over a quarter second.
   if(turnAround>0){const step=Math.min(turnAround,Math.PI*4*dt);P.yaw+=step;turnAround-=step}
-  // Hold your look thumb at the right edge of the screen to keep turning: full 360° without lifting.
-  for(const id in T){const t=T[id];if(t.k!=='look')continue;const W=window.innerWidth,edge=W*0.07;
-    if(t.x>W-edge)P.yaw-=(1-(W-t.x)/edge)*3.2*sens*(ads?0.5:1)*dt;
-    if(t.y<edge*0.8)P.pitch=clamp(P.pitch+(1-t.y/(edge*0.8))*1.4*dt,-PITCH,PITCH);
-    else if(t.y>window.innerHeight-edge*0.8&&t.k==='look'&&!t.fire)P.pitch=clamp(P.pitch-(1-(window.innerHeight-t.y)/(edge*0.8))*1.4*dt,-PITCH,PITCH)}
+  // Look stick: push past the inner ring and hold to keep turning (full 360°) or tilting up and down.
+  for(const id in T){const t=T[id];if(!t.stick)continue;const L=Math.hypot(t.offX,t.offY);if(L<=LOOK_DZ)continue;
+    const n=Math.min(1,(L-LOOK_DZ)/(LOOK_R*1.25)),c=n*n*0.55+n*0.45,r=sens*(ads?0.5:1)*assistK;
+    P.yaw-=t.offX/L*c*3.8*r*dt;P.pitch=clamp(P.pitch-t.offY/L*c*2.1*r*dt,-PITCH,PITCH);swayX+=t.offX/L*c*0.5}
   // Right stick: rate-based turning; held at full tilt it speeds up so you can spin around quickly.
   padHold=Math.hypot(pad.lx,pad.ly)>0.93?padHold+dt:0;const boost=1+clamp((padHold-0.35)/0.5,0,1)*1.3;
   if(pad.lx||pad.ly){const r=sens*(ads?0.5:1)*assistK;P.yaw-=pad.lx*3.4*r*boost*dt;P.pitch=clamp(P.pitch-pad.ly*2.4*r*dt,-PITCH,PITCH);swayX+=pad.lx*0.6;swayY+=pad.ly*0.6}
@@ -1851,7 +1863,7 @@ function begin(){
 }
 function pauseGame(){if(state!=='play')return;state='pause';fireHeld=0;mouseDown=false;$('ovPause').hidden=false;
   [...document.querySelectorAll('.btn.on')].forEach(b=>b.classList.remove('on'));joy.id=null;joy.x=joy.y=0;$('joyBase').classList.remove('on');
-  for(const k in T)delete T[k];for(const k in keys)delete keys[k];joy.sprint=false;jb.classList.remove('sprint');lookAccX=lookAccY=lookPrevX=lookPrevY=0}
+  for(const k in T)delete T[k];for(const k in keys)delete keys[k];lookB.hidden=true;joy.sprint=false;jb.classList.remove('sprint');lookAccX=lookAccY=lookPrevX=lookPrevY=0}
 function resume(){if(state!=='pause')return;audioInit();state='play';$('ovPause').hidden=true;lockPointer()}
 function gameOver(){
   state='over';SFX.death();
@@ -1916,6 +1928,9 @@ function press(b){
 }
 function lookBy(dx,dy,k){P.yaw-=dx*k*sens;P.pitch=clamp(P.pitch-dy*k*sens,-PITCH,PITCH);swayX+=dx*0.02;swayY+=dy*0.02}
 function placeJoy(x,y){jb.style.left=x+'px';jb.style.top=y+'px';jb.style.bottom='auto'}
+const lookB=$('lookBase'),lk=$('lookKnob'),LOOK_R=52,LOOK_DZ=18;
+function placeLook(x,y){lookB.style.left=x+'px';lookB.style.top=y+'px'}
+function showLookStick(x,y){placeLook(x,y);lk.style.transform='';lookB.hidden=false}
 function restJoy(){placeJoy(Math.max(110,window.innerWidth*0.14),window.innerHeight-Math.max(110,window.innerHeight*0.26));jk.style.transform=''}
 restJoy();window.addEventListener('resize',restJoy);
 const JR=52; // stick radius in px
@@ -1927,7 +1942,7 @@ play.addEventListener('touchstart',e=>{
     if(b==='fire'){T[t.identifier]={k:'look',x:t.clientX,y:t.clientY,fire:true,el};fireHeld++;el.classList.add('on')}
     else if(b){T[t.identifier]={k:'btn',el};if(b!=='ads')el.classList.add('on');press(b)}
     else if(t.clientX<window.innerWidth*0.42&&joy.id===null){joy.id=t.identifier;joy.ox=t.clientX;joy.oy=t.clientY;T[t.identifier]={k:'joy'};placeJoy(t.clientX,t.clientY);jb.classList.add('on')}
-    else{T[t.identifier]={k:'look',x:t.clientX,y:t.clientY};
+    else{T[t.identifier]={k:'look',x:t.clientX,y:t.clientY,ox:t.clientX,oy:t.clientY,stick:true,offX:0,offY:0};showLookStick(t.clientX,t.clientY);
       const now=performance.now();if(now-lastLookTap<280&&Math.hypot(t.clientX-lastTapX,t.clientY-lastTapY)<60&&turnAround<=0){turnAround=Math.PI;SPR.rv.y+=4}
       lastLookTap=now;lastTapX=t.clientX;lastTapY=t.clientY}
   }
@@ -1935,7 +1950,15 @@ play.addEventListener('touchstart',e=>{
 play.addEventListener('touchmove',e=>{
   if(state!=='play')return;e.preventDefault();
   for(const t of e.changedTouches){const s=T[t.identifier];if(!s)continue;
-    if(s.k==='look'){lookAccX+=t.clientX-s.x;lookAccY+=t.clientY-s.y;s.x=t.clientX;s.y=t.clientY}
+    if(s.k==='look'){
+      if(s.stick){
+        // Within the inner ring the stick aims precisely like a drag; beyond it, holding keeps turning.
+        let ox=t.clientX-s.ox,oy=t.clientY-s.oy,L=Math.hypot(ox,oy);
+        if(L>LOOK_R*2.2){const over=L-LOOK_R*2.2;s.ox+=ox/L*over;s.oy+=oy/L*over;ox=t.clientX-s.ox;oy=t.clientY-s.oy;L=Math.hypot(ox,oy);placeLook(s.ox,s.oy)}
+        s.offX=ox;s.offY=oy;const k=Math.min(L,LOOK_R);lk.style.transform='translate('+(L?ox/L*k:0)+'px,'+(L?oy/L*k:0)+'px)';
+        const fine=L<LOOK_DZ?1:0.45;lookAccX+=(t.clientX-s.x)*fine;lookAccY+=(t.clientY-s.y)*fine;
+      }else{lookAccX+=t.clientX-s.x;lookAccY+=t.clientY-s.y}
+      s.x=t.clientX;s.y=t.clientY}
     else if(s.k==='joy'){
       let dx=t.clientX-joy.ox,dy=t.clientY-joy.oy,L=Math.hypot(dx,dy);
       // The base follows a thumb that wanders far past the sprint ring.
@@ -1953,6 +1976,7 @@ function tEnd(e){
     if(s.fire){fireHeld=Math.max(0,fireHeld-1)}
     if(s.el&&s.el.dataset.btn!=='ads')s.el.classList.remove('on');
     if(s.k==='joy'){joy.id=null;joy.x=joy.y=0;joy.sprint=false;jb.classList.remove('on','sprint');restJoy()}
+    if(s.stick&&!Object.values(T).some(o=>o!==s&&o.stick))lookB.hidden=true;
     delete T[t.identifier]}
 }
 play.addEventListener('touchend',tEnd);play.addEventListener('touchcancel',tEnd);
