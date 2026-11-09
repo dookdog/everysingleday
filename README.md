@@ -12,3 +12,11 @@ For the Future
 ## Lily Leap for Unreal Engine 5
 
 `LilyLeapUnreal/` is the same game rebuilt in Unreal Engine 5 in C++, with a 3D frog, flowers and flies built from code. It has not been compiled yet. See `LilyLeapUnreal/README.md` for how to build it and put it on an iPhone.
+
+### Put Lily Leap on your iPhone home screen (no Mac needed)
+
+The `docs/` folder is an installable version of the game: full screen, its own icon, and it works offline once loaded. It's built by `python3 lily-leap/build_standalone.py`.
+
+1. Turn on GitHub Pages once: on github.com, open this repo's **Settings → Pages**. Under **Build and deployment**, set **Source** to **Deploy from a branch**, choose the branch that holds `docs/` and the **/docs** folder, then **Save**.
+2. After about a minute, open `https://dookdog.github.io/everysingleday/` in **Safari** on the iPhone.
+3. Tap **Share**, then **Add to Home Screen**.
