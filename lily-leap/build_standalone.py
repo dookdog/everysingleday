@@ -92,7 +92,16 @@ OUT.write_text(document(), encoding="utf-8")
 print(f"Wrote {OUT.relative_to(HERE.parent)} ({OUT.stat().st_size / 1024:.0f} KB)")
 
 # 2. The installable home-screen app (GitHub Pages serves the docs/ folder).
-pwa_head = """<link rel="manifest" href="manifest.webmanifest">
+SITE = "https://dookdog.github.io/everysingleday/"
+pwa_head = f"""<link rel="manifest" href="manifest.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Lily Leap">
+<meta property="og:description" content="Hop across the blooms and snap up every fly in the pond. Free to play on your phone.">
+<meta property="og:url" content="{SITE}">
+<meta property="og:image" content="{SITE}og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 """
@@ -108,6 +117,8 @@ DOCS.mkdir(exist_ok=True)
 (DOCS / "index.html").write_text(app_html, encoding="utf-8")
 for size in (180, 192, 512):
     shutil.copyfile(ICONS / f"icon-{size}.png", DOCS / f"icon-{size}.png")
+if (ICONS / "og-image.png").exists():   # link-preview picture shown when the game's link is texted
+    shutil.copyfile(ICONS / "og-image.png", DOCS / "og-image.png")
 
 manifest = {
     "name": "Lily Leap",
