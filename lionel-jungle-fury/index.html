@@ -79,12 +79,12 @@ body.ads #cross b{width:5px;height:5px;left:-2.5px;top:-2.5px;box-shadow:0 0 0 1
 #joyBase.on{opacity:1}
 #joyKnob{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(239,230,207,.35);border:1.5px solid rgba(239,230,207,.6)}
 #cross{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
-#cross i{position:absolute;background:var(--bone);box-shadow:0 0 2px #000}
+#cross i{display:none;position:absolute;background:var(--bone);box-shadow:0 0 2px #000}
 #cross i:nth-child(1){left:-1px;top:-14px;width:2px;height:8px}
 #cross i:nth-child(2){left:-1px;top:6px;width:2px;height:8px}
 #cross i:nth-child(3){top:-1px;left:-14px;height:2px;width:8px}
 #cross i:nth-child(4){top:-1px;left:6px;height:2px;width:8px}
-#cross b{position:absolute;left:-1.5px;top:-1.5px;width:3px;height:3px;border-radius:50%;background:var(--gold)}
+#cross b{display:none;position:absolute;left:-1.5px;top:-1.5px;width:3px;height:3px;border-radius:50%;background:var(--gold)}
 #hitm{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;pointer-events:none;
   background:linear-gradient(45deg,transparent 46%,#fff 46%,#fff 54%,transparent 54%),linear-gradient(-45deg,transparent 46%,#fff 46%,#fff 54%,transparent 54%);
   -webkit-mask:radial-gradient(circle,transparent 5px,#000 6px);mask:radial-gradient(circle,transparent 5px,#000 6px)}
@@ -1091,6 +1091,38 @@ const VM=[], vmRoot=new THREE.Group(); wScene.add(vmRoot);
 }
 const mFlash=new THREE.Mesh(new THREE.PlaneGeometry(0.32,0.32),new THREE.MeshBasicMaterial({map:flashTex,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
 mFlash.visible=false;
+/* ---------- gyroscopic reticle ----------
+   A small globe around the crosshair, locked to the jungle: turning spins it on its vertical axis, looking up or
+   down rolls it like an attitude ball. Gold equator = horizon, gold pin = north pole, jade bead = way home to the
+   temple. The inner ring opens with weapon spread (moving, firing) and the globe tucks in when aiming down sights. */
+const RET={g:new THREE.Group(),ball:new THREE.Group(),bead:null,ringMesh:null,bloom:0,mats:[]};
+{
+  const D=Math.PI/180,lm=(c,o)=>{const m=new THREE.LineBasicMaterial({color:c,transparent:true,opacity:o,depthTest:false,depthWrite:false});RET.mats.push([m,o]);return m};
+  const faint=lm(0xefe6cf,0.32),gold=lm(0xf2b632,0.95);
+  const loop=(fn,n)=>{const pts=[];for(let i=0;i<=n;i++)pts.push(fn(i/n*TAU));return new THREE.BufferGeometry().setFromPoints(pts)};
+  for(const lat of [-60,-30,30,60]){const r=Math.cos(lat*D),y=Math.sin(lat*D);RET.ball.add(new THREE.Line(loop(a=>new THREE.Vector3(Math.cos(a)*r,y,Math.sin(a)*r),40),faint))}
+  RET.ball.add(new THREE.Line(loop(a=>new THREE.Vector3(Math.cos(a),0,Math.sin(a)),64),gold));
+  for(let k=0;k<6;k++){const c=Math.cos(k*Math.PI/6),sn=Math.sin(k*Math.PI/6);RET.ball.add(new THREE.Line(loop(a=>new THREE.Vector3(Math.cos(a)*c,Math.sin(a),Math.cos(a)*sn),40),faint))}
+  RET.ball.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,1,0),new THREE.Vector3(0,1.35,0)]),gold));
+  const bm=(c)=>{const m=new THREE.MeshBasicMaterial({color:c,transparent:true,depthTest:false,depthWrite:false});RET.mats.push([m,1]);return m};
+  const pin=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,6),bm(0xf2b632));pin.position.y=1.38;RET.ball.add(pin);
+  RET.bead=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8),bm(0x6fe3a8));RET.ball.add(RET.bead);
+  // Camera-locked aim ring and centre pip (these never spin: they are where the bullet goes).
+  RET.ringMesh=new THREE.Line(loop(a=>new THREE.Vector3(Math.cos(a)*0.32,Math.sin(a)*0.32,0),32),lm(0xefe6cf,0.85));RET.g.add(RET.ringMesh);
+  const pip=new THREE.Mesh(new THREE.CircleGeometry(0.06,12),bm(0xf2b632));RET.g.add(pip);
+  RET.g.add(RET.ball);RET.g.position.set(0,0,-0.6);RET.g.renderOrder=10;RET.g.traverse(o=>o.renderOrder=10);wScene.add(RET.g);
+}
+function updReticle(dt){
+  const w=WEAP[cur];
+  RET.bloom=Math.max(0,RET.bloom-dt*(2.2+RET.bloom));
+  const spreadNow=(w.spread||0.01)*(ads?0.35:1)*(P.sprint?1.6:1)*(1+moveAmt*0.8)+RET.bloom*0.02;
+  // The globe is world-locked: inverse of the head's rotation, so world directions read straight into it.
+  camera.getWorldQuaternion(qA);RET.ball.quaternion.copy(qA).invert();
+  vD.set(-P.x,0,-P.z);if(vD.lengthSq()<0.01)vD.set(0,0,-1);RET.bead.position.copy(vD.normalize());
+  const r=0.034*(1-adsT*0.45);RET.g.scale.setScalar(r);
+  RET.ringMesh.scale.setScalar(1+Math.min(2.2,spreadNow*28));
+  const fade=1-adsT*0.75;for(const [m,o] of RET.mats)m.opacity=o*fade;
+}
 // Ejection ports (gun-local): pistol slide, SMG receiver, shotgun breech. Crossbow, launcher and totem eject nothing.
 VM[1].userData.eject=new THREE.Vector3(0.02,0.05,-0.07);
 VM[2].userData.eject=new THREE.Vector3(0.026,0.055,-0.06);
@@ -1353,7 +1385,7 @@ function fire(){
    // Viewmodel springs: thrown back, muzzle climbs, a little roll and twist.
    const vk=w.vk||[0.5,3,1];SPR.v.z+=vk[0]*(ads?0.6:1);SPR.rv.x+=vk[1]*(ads?0.5:1);SPR.rv.z+=R(-1,1)*vk[2];SPR.rv.y+=R(-1,1)*vk[2]*0.6;
    if(cur===1)slideT=0.09;if(cur===2)boltT=0.07;if(cur===3)pumpT=0.55}
-  vmKick=1;SFX[w.snd]();if(pad.on)rumble(w.pellets||w.kind==='proj'?0.6:0.12,w.pellets?0.4:0.22,w.pellets?120:50);
+  vmKick=1;RET.bloom=Math.min(1.8,RET.bloom+(w.pellets?1.1:0.35+(w.spread||0)*12));SFX[w.snd]();if(pad.on)rumble(w.pellets||w.kind==='proj'?0.6:0.12,w.pellets?0.4:0.22,w.pellets?120:50);
   if(w.kind==='melee'){swingT=0.32;melee(w)}
   else if(w.kind==='ray'){const n=w.pellets||1;for(let i=0;i<n;i++){const spr=w.spread*(ads?0.35:1)*(P.sprint?1.6:1);tv.set(aim.x+R(-1,1)*spr,aim.y+R(-1,1)*spr,aim.z+R(-1,1)*spr).normalize();shootRay(tv.clone(),w)}
     muzzleT=0.05;if(!w.pellets)ejectVM(false);
@@ -1523,7 +1555,7 @@ function updWeapon(dt){
   vmRoot.position.set(0.22*(1-adsT)+fig+SPR.p.x+Math.sin(ph*0.5)*0.002*breath,
     -0.23+adsT*0.045+figY+SPR.p.y+Math.sin(ph)*0.0025*breath-sw*0.35-rl*0.1-(P.sprint?0.05:0),
     -0.46-adsT*0.05+SPR.p.z);
-  updVM(dt);
+  updVM(dt);updReticle(dt);
   vmRoot.rotation.set(SPR.r.x+rl*0.55-sw*0.5+(P.sprint?-0.25:0),SPR.r.y+(P.sprint?0.5:0)*(1-adsT),SPR.r.z+rl*0.4+Math.sin(bobT*0.5)*0.02*moveAmt*bob+(P.sprint?0.25:0));
   // Mechanical parts: pistol slide blowback (locks back on empty), SMG charging handle, shotgun pump.
   const gg=VM[cur];
