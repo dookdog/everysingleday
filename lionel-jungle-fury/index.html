@@ -366,7 +366,8 @@ const MAT={
 
 /* ---------- sky: blue upper atmosphere, sun, clouds ---------- */
 // One sun direction drives the sky disc, the sunlight and shadows, the light shafts and the lens flare.
-const SUN_DIR=new THREE.Vector3(40,52,18).normalize();
+// 32° above the horizon, ahead and a little right of where Lionel starts, so it is in view from the first second.
+const SUN_DIR=new THREE.Vector3(-0.28,0.53,0.80).normalize();
 camera.far=1200;camera.updateProjectionMatrix();
 const skyMesh=new THREE.Mesh(new THREE.SphereGeometry(1000,48,24),new THREE.ShaderMaterial({
   side:THREE.BackSide,depthWrite:false,fog:false,
@@ -377,7 +378,8 @@ const skyMesh=new THREE.Mesh(new THREE.SphereGeometry(1000,48,24),new THREE.Shad
       vec3 c=mix(haze,horizon,smoothstep(-0.05,0.06,h));c=mix(c,mid,smoothstep(0.06,0.32,h));c=mix(c,zenith,smoothstep(0.32,0.95,h));
       float s=max(dot(d,sunDir),0.);
       c+=vec3(1.,.82,.55)*pow(s,6.)*0.28+vec3(1.,.93,.78)*pow(s,48.)*0.55+vec3(1.,.97,.9)*pow(s,400.)*0.9;
-      c=mix(c,vec3(1.,.99,.95)*1.7,smoothstep(.99955,.99975,s));
+      c+=vec3(1.,.9,.7)*smoothstep(.9965,.9988,s)*0.6;
+      c=mix(c,vec3(1.,.99,.95)*1.9,smoothstep(.99885,.9992,s));
       gl_FragColor=vec4(c,1.);}`}));
 skyMesh.renderOrder=-2;skyMesh.frustumCulled=false;scene.add(skyMesh);
 const cloudLayers=[[200,0.0055,0.5,0.95],[290,0.0033,0.56,0.7]].map(([y,scale,cover,alpha],i)=>{
@@ -510,6 +512,7 @@ function inst(geo,mat,n){const m=new THREE.InstancedMesh(geo,mat,n);m.frustumCul
     const a=srnd()*TAU, r=17+Math.pow(srnd(),0.8)*100, x=Math.sin(a)*r, z=Math.cos(a)*r, g=groundH(x,z);
     if(g<WATER+0.25) continue;
     let ok=true; for(const o of obs){const dx=o.x-x,dz=o.z-z;if(dx*dx+dz*dz<12){ok=false;break}} if(!ok) continue;
+    {const sh=Math.hypot(SUN_DIR.x,SUN_DIR.z);if(r<75&&(x*SUN_DIR.x+z*SUN_DIR.z)/(r*sh)>Math.cos(0.42))continue}   // leave a window in the canopy toward the sun
     const palm=srnd()<0.35;
     const h=palm?R(6,9.5):R(10,17), s=palm?R(0.55,0.75):R(1,1.7);
     dummy.position.set(x,g-0.3,z); dummy.rotation.set(R(-0.06,0.06),srnd()*TAU,R(-0.06,0.06)); dummy.scale.set(s,h,s); dummy.updateMatrix();
@@ -1285,7 +1288,7 @@ function drop(x,z,type){
 }
 
 /* ---------- state ---------- */
-const P={x:0,z:2.2,fy:TIER*4,cy:TIER*4+1.65,vy:0,yaw:Math.PI,pitch:-0.05,kick:0,hp:100,onGround:true};
+const P={x:0,z:2.2,fy:TIER*4,cy:TIER*4+1.65,vy:0,yaw:Math.PI,pitch:0.12,kick:0,hp:100,onGround:true};
 let state='title', wave=0, waveState='break', waveTimer=0, queue=[], spawnT=0, score=0, kills=0, best=+store.get('lionel-best','0')||0;
 let cur=1, pend=1, swT=0, cooldown=0, reloading=false, reloadT=0, pendReload=false, swingT=0, vmKick=0, bobT=0, moveAmt=0, swayX=0, swayY=0;
 const SPR={p:new THREE.Vector3(),v:new THREE.Vector3(),r:new THREE.Vector3(),rv:new THREE.Vector3()};
@@ -1707,7 +1710,7 @@ function resetGame(){
   pickups.forEach(p=>scene.remove(p.g));pickups.length=0;
   if(PHYS)clearDebris();
   W=WEAP.map((w,i)=>({owned:i<3,mag:w.mag,res:w.res}));
-  Object.assign(P,{x:0,z:2.2,fy:TIER*4,cy:TIER*4+1.65,vy:0,yaw:Math.PI,pitch:-0.05,kick:0,hp:100,onGround:true});
+  Object.assign(P,{x:0,z:2.2,fy:TIER*4,cy:TIER*4+1.65,vy:0,yaw:Math.PI,pitch:0.12,kick:0,hp:100,onGround:true});
   score=0;kills=0;wave=0;waveState='break';waveTimer=2.2;queue=[];
   cur=1;pend=1;swT=0;reloading=false;pendReload=false;cooldown=0;fireHeld=0;mouseDown=false;hurtT=0;shake=0;
   joy.id=null;joy.x=joy.y=0;joy.sprint=false;setAds(false);adsT=0;camera.fov=74;camera.updateProjectionMatrix();wCam.fov=58;wCam.updateProjectionMatrix();
@@ -1943,11 +1946,11 @@ function frame(now){
   pollPad();
   if(state==='play'){updPlayer(dt);updWeapon(dt);updWaves(dt);updEnemies(dt);updProjectiles(dt);updPhysics(dt);updPickups(dt);updHUD();updFX(dt)}
   else if(state==='title'){
-    const a=time*0.07;camera.position.set(Math.sin(a)*27,9+Math.sin(time*0.2)*1.5,Math.cos(a)*27);camera.lookAt(0,3.2,0);updPhysics(dt);updFX(dt);
+    const a=time*0.07;camera.position.set(Math.sin(a)*27,9+Math.sin(time*0.2)*1.5,Math.cos(a)*27);camera.lookAt(0,6.5,0);updPhysics(dt);updFX(dt);
   }
   else if(state==='over'){camera.position.y+=(P.fy+0.4-camera.position.y)*Math.min(1,dt*3);camera.rotation.z+=(0.5-camera.rotation.z)*Math.min(1,dt*2);updEnemies(dt);updPhysics(dt);updFX(dt)}
   // Keep the sun's shadow map centred on the action.
-  {const [fx,fz]=focusXZ();sun.position.set(fx+40,52,fz+18);sun.target.position.set(fx,0,fz);sun.target.updateMatrixWorld();TX.waterN.offset.set(time*0.012,time*0.008)}
+  {const [fx,fz]=focusXZ();sun.position.set(fx+SUN_DIR.x*70,SUN_DIR.y*70,fz+SUN_DIR.z*70);sun.target.position.set(fx,0,fz);sun.target.updateMatrixWorld();TX.waterN.offset.set(time*0.012,time*0.008)}
   updSky(dt);if(state!=='pause')updFlare(dt);
   renderer.clear();
   renderer.render(scene,camera);
