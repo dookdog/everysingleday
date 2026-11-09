@@ -11,7 +11,7 @@ For the Future
 
 ## Lily Leap for Unreal Engine 5
 
-`LilyLeapUnreal/` is the same game rebuilt in Unreal Engine 5 in C++, with a 3D frog, flowers and flies built from code. It has not been compiled yet. See `LilyLeapUnreal/README.md` for how to build it and put it on an iPhone.
+`LilyLeapUnreal/` is the same game rebuilt in Unreal Engine 5 in C++, with a 3D frog, flowers, flies, wasps and a dragonfly built from code, plus day-to-night ponds. It is compile-checked and gameplay-tested without Unreal (`LilyLeapUnreal/Tools/HeadlessCheck/run_check.sh`) but has not yet been built with the real engine. `LilyLeapUnreal/README.md` explains how to put it on an iPhone without owning a Mac (a rented cloud Mac plus TestFlight).
 
 ### Put Lily Leap on your iPhone home screen (no Mac needed)
 

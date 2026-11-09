@@ -141,11 +141,12 @@ void ALilyHUD::DrawHUD()
 	S = Canvas->ClipY / 720.f;
 	Margin = FMath::Max(24.f * S, Canvas->ClipX * 0.045f);
 
+	DrawNightGlow(Pond);
 	DrawWorldTexts(Pond);
 	if (Pond->State != ELilyState::Title)
 	{
 		DrawStatus(Pond);
-		if (Pond->State == ELilyState::Play) DrawFlyArrow(Pond);
+		if (Pond->State == ELilyState::Play) { DrawFlyArrow(Pond); DrawBanner(Pond); }
 	}
 	DrawControls(Pond);
 	if (Pond->IsMenuOpen()) DrawMenu(Pond);
@@ -161,6 +162,44 @@ void ALilyHUD::DrawWorldTexts(ALilyPond* Pond)
 		const float A = FMath::Clamp(T.Life / 0.5f, 0.f, 1.f);
 		Label(T.Text, Sc.X, Sc.Y, 1.1f * T.Size * S, WithAlpha(T.Color, A), true, true);
 	}
+}
+
+void ALilyHUD::DrawNightGlow(ALilyPond* Pond)
+{
+	const float T = Pond->GameTime;
+	int32 i = 0;
+	for (const FVector& P : Pond->Stars)
+	{
+		const FVector Sc = Project(P);
+		if (Sc.Z <= 0.f) continue;
+		const float A = 0.35f + 0.45f * FMath::Abs(FMath::Sin(T * (0.8f + (i % 7) * 0.1f) + i));
+		DrawRect(FLinearColor(1.f, 1.f, 0.94f, A), Sc.X, Sc.Y, 2.5f * S, 2.5f * S);
+		i++;
+	}
+	for (const FVector& P : Pond->NightFlies)
+	{
+		const FVector Sc = Project(P);
+		if (Sc.Z > 0.f) Disc(FVector2D(Sc.X, Sc.Y), 20.f * S, FLinearColor(0.86f, 0.92f, 1.f, 0.16f));
+	}
+	i = 0;
+	for (const FVector& P : Pond->Fireflies)
+	{
+		const FVector Sc = Project(P);
+		if (Sc.Z <= 0.f) continue;
+		const float A = 0.35f + 0.65f * FMath::Max(0.f, FMath::Sin(T * 2.2f + i * 1.7f));
+		const FVector2D C(Sc.X, Sc.Y);
+		Disc(C, 12.f * S, FLinearColor(0.94f, 1.f, 0.6f, 0.12f * A));
+		Disc(C, 6.f * S, FLinearColor(0.94f, 1.f, 0.6f, 0.3f * A));
+		Disc(C, 2.5f * S, FLinearColor(1.f, 1.f, 0.8f, 0.9f * A));
+		i++;
+	}
+}
+
+void ALilyHUD::DrawBanner(ALilyPond* Pond)
+{
+	if (Pond->BannerLife <= 0.f || Pond->BannerText.IsEmpty()) return;
+	const float A = FMath::Clamp(FMath::Min(Pond->BannerLife / 0.5f, (2.4f - Pond->BannerLife) / 0.3f), 0.f, 1.f);
+	Label(Pond->BannerText, Canvas->ClipX * 0.5f, Canvas->ClipY * 0.22f, 2.f * S, WithAlpha(Cream, A), true, true);
 }
 
 void ALilyHUD::DrawStatus(ALilyPond* Pond)
@@ -180,9 +219,19 @@ void ALilyHUD::DrawStatus(ALilyPond* Pond)
 	const FString ScoreText = FString::Printf(TEXT("%05d"), Pond->Score);
 	Label(ScoreText, X + W - 20.f * S - Measure(ScoreText, 0.95f * S).X, Y2 + 6.f * S, 0.95f * S, Ink, false);
 
+	float Below = Y2 + H2 + 8.f * S;
 	if (Pond->Combo > 1 && Pond->GameTime - Pond->LastEat < 2.5f)
 	{
-		Label(FString::Printf(TEXT("%dx combo"), Pond->Combo), X + 6.f * S, Y2 + H2 + 8.f * S, 1.1f * S, Cream, false, true);
+		Label(FString::Printf(TEXT("%dx combo"), Pond->Combo), X + 6.f * S, Below, 1.1f * S, Cream, false, true);
+		Below += 40.f * S;
+	}
+	const float Power = Pond->SuperHopLeft();
+	if (Power > 0.f)
+	{
+		const float PW = 210.f * S, PH = 40.f * S;
+		RoundRect(X, Below, PW, PH, PH * 0.5f, FLinearColor(0.08f, 0.27f, 0.31f, 0.8f));
+		RoundRect(X + 4.f * S, Below + 4.f * S, (PW - 8.f * S) * FMath::Clamp(Power / 12.f, 0.05f, 1.f), PH - 8.f * S, (PH - 8.f * S) * 0.5f, LilyHex(0xB9F3FF));
+		Label(FString::Printf(TEXT("Super hop %ds"), FMath::CeilToInt(Power)), X + 18.f * S, Below + 7.f * S, 0.75f * S, LilyHex(0x0D3A40), false);
 	}
 }
 
@@ -316,7 +365,8 @@ void ALilyHUD::DrawMenu(ALilyPond* Pond)
 		Lines.Add(Line(TEXT("Hop across the blooms and snap up every fly in the pond."), 0.8f, Ink));
 		Lines.Add(Line(TEXT("Walk: hold the left side of the screen.   Hop: big green button (hold = higher)."), 0.6f, Ink));
 		Lines.Add(Line(TEXT("Tongue: pink button snaps the nearest fly.   Golden flies are worth 5x."), 0.6f, Ink));
-		Lines.Add(Line(TEXT("Purple bellflowers launch you sky-high. Stay out of the water!"), 0.6f, Petal));
+		Lines.Add(Line(TEXT("Eat the shimmering dragonfly for a double jump. Purple bellflowers launch you sky-high."), 0.6f, Ink));
+		Lines.Add(Line(TEXT("Wasps patrol from pond 2. Stay out of the water!"), 0.6f, Petal));
 		Lines.Add(Btn(TEXT("Hop in"), TEXT("start")));
 		Lines.Add(Line(Pond->Best > 0 ? FString::Printf(TEXT("Best score: %d"), Pond->Best) : FString(TEXT("Keyboard: arrows or A/D, Space to hop, X to snap")), 0.55f, WithAlpha(Ink, 0.7f)));
 		break;
@@ -329,13 +379,14 @@ void ALilyHUD::DrawMenu(ALilyPond* Pond)
 		Lines.Add(Line(FString::Printf(TEXT("Pond %d cleared"), Pond->Level), 1.8f, Leaf));
 		Lines.Add(Line(FString::Printf(TEXT("Flies eaten: %d      Time: %ds"), Pond->Total, FMath::RoundToInt(Pond->LevelTime)), 0.8f, Ink));
 		Lines.Add(Line(FString::Printf(TEXT("Speed bonus: +%d      Score: %d"), Pond->ClearBonus, Pond->Score), 0.8f, Ink));
-		Lines.Add(Line(TEXT("The next pond has more flies, and they're quicker. You get a heart back."), 0.55f, WithAlpha(Ink, 0.7f)));
+		Lines.Add(Line(FString::Printf(TEXT("Next up: the %s pond, with more flies and %s. You get a heart back."),
+			*FString(Pond->SkyForPond(Pond->Level + 1).Name).ToLower(), Pond->Level == 1 ? TEXT("its first wasps") : TEXT("more wasps")), 0.55f, WithAlpha(Ink, 0.7f)));
 		Lines.Add(Btn(TEXT("Next pond"), TEXT("next")));
 		break;
 	case ELilyState::Over:
 		Lines.Add(Line(TEXT("Out of hops"), 1.8f, Leaf));
 		Lines.Add(Line(FString::Printf(TEXT("Score: %d      Best: %d"), Pond->Score, FMath::Max(Pond->Best, Pond->Score)), 0.9f, Ink));
-		Lines.Add(Line(FString::Printf(TEXT("You reached pond %d."), Pond->Level), 0.6f, WithAlpha(Ink, 0.7f)));
+		Lines.Add(Line(FString::Printf(TEXT("You reached pond %d (%s)."), Pond->Level, *FString(Pond->CurrentSky().Name).ToLower()), 0.6f, WithAlpha(Ink, 0.7f)));
 		Lines.Add(Btn(TEXT("Try again"), TEXT("again")));
 		break;
 	default:

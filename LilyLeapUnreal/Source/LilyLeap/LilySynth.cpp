@@ -55,7 +55,6 @@ namespace
 ULilySynth::ULilySynth(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	bAllowSpatialization = false;
 	bAutoActivate = false;
 }
 
@@ -160,6 +159,20 @@ void ULilySynth::DoSfx(ELilySfx Sfx)
 	case ELilySfx::Croak:
 		AddTone(190, 150, 0.09f, Square, 0.035f);
 		AddTone(200, 140, 0.11f, Square, 0.035f, 0.13f);
+		break;
+	case ELilySfx::Sting:
+		AddTone(900, 380, 0.16f, Square, 0.04f);
+		AddNoise(0.12f, 0.12f, 2500.f, true);
+		break;
+	case ELilySfx::Power:
+	{
+		const float Fs[] = { 659, 784, 988, 1319, 1568 };
+		for (int32 i = 0; i < 5; i++) AddTone(Fs[i], Fs[i] * 1.02f, 0.14f, Triangle, 0.08f, i * 0.05f);
+		break;
+	}
+	case ELilySfx::Hop2:
+		AddTone(520, 1040, 0.14f, Sine, 0.12f);
+		AddTone(1040, 1560, 0.10f, Triangle, 0.04f, 0.03f);
 		break;
 	case ELilySfx::Over:
 	{

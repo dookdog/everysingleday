@@ -38,7 +38,7 @@ namespace LilyTune
 
 enum class ELilyState : uint8 { Title, Play, Paused, Clearing, Clear, Over };
 enum class ELilyPlat : uint8 { Island, Flower, Pad, Bloom };
-enum class ELilySfx : uint8 { Jump, Land, Tongue, Gulp, Gold, Bounce, Splash, Clear, Croak, Over };
+enum class ELilySfx : uint8 { Jump, Land, Tongue, Gulp, Gold, Bounce, Splash, Clear, Croak, Over, Sting, Power, Hop2 };
 enum class ELilySong : uint8 { Title = 0, Game = 1 };
 
 /** sRGB hex (0xRRGGBB) to a linear colour, so colours match the web version. */

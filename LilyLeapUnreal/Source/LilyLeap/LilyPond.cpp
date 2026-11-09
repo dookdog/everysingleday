@@ -41,6 +41,27 @@ namespace
 
 	float MaxGap(float Rise) { return Rise > 0.f ? 188.f - Rise * 0.6f : 205.f; }
 
+	FLilySky MakeSky(const TCHAR* Name, uint32 SkyC, uint32 Hor, uint32 SunC, uint32 Near, uint32 Far, uint32 Wat, uint32 Light, float SunLux, float FillLux, bool bNight)
+	{
+		FLilySky K;
+		K.Name = Name; K.Sky = LilyHex(SkyC); K.Horizon = LilyHex(Hor); K.Sun = LilyHex(SunC);
+		K.HillNear = LilyHex(Near); K.HillFar = LilyHex(Far); K.Water = LilyHex(Wat); K.SunColor = LilyHex(Light);
+		K.SunLux = SunLux; K.FillLux = FillLux; K.bNight = bNight;
+		return K;
+	}
+
+	/** Ponds cycle morning, noon, sunset, night. */
+	const TArray<FLilySky>& Skies()
+	{
+		static const TArray<FLilySky> All = {
+			MakeSky(TEXT("Morning"), 0xBFE6F5, 0xFDE3C8, 0xFFE9A3, 0x82C389, 0xA7D6B0, 0x3F93B0, 0xFFF1D6, LilyTune::SunLux, LilyTune::FillLux, false),
+			MakeSky(TEXT("Noon"),    0x8FD0F0, 0xD8F1F7, 0xFFF6C8, 0x6FBB6F, 0x9BD3A2, 0x3FA0C8, 0xFFFFF4, LilyTune::SunLux * 1.2f, LilyTune::FillLux * 1.15f, false),
+			MakeSky(TEXT("Sunset"),  0xC98BB0, 0xF6A77A, 0xFFD27A, 0x8F9F78, 0xB59AB0, 0x8E7C9C, 0xFFB98A, LilyTune::SunLux * 0.75f, LilyTune::FillLux * 0.8f, false),
+			MakeSky(TEXT("Night"),   0x1D2F5E, 0x34497A, 0xF4F1D8, 0x23413F, 0x2C4A52, 0x1F4A66, 0xAFC3FF, LilyTune::SunLux * 0.3f, LilyTune::FillLux * 0.5f, true),
+		};
+		return All;
+	}
+
 }
 
 ALilyPond::ALilyPond()
@@ -85,10 +106,10 @@ void ALilyPond::BuildLightingAndCamera()
 {
 	UWorld* World = GetWorld();
 
-	auto MakeLight = [World](const FRotator& Rot, float Lux, const FLinearColor& Color, bool bShadows)
+	auto MakeLight = [World](const FRotator& Rot, float Lux, const FLinearColor& Color, bool bShadows) -> ADirectionalLight*
 	{
 		ADirectionalLight* Light = World->SpawnActorDeferred<ADirectionalLight>(ADirectionalLight::StaticClass(), FTransform(Rot));
-		if (!Light) return;
+		if (!Light) return nullptr;
 		if (ULightComponent* LC = Light->GetLightComponent())
 		{
 			LC->SetMobility(EComponentMobility::Movable);
@@ -97,10 +118,11 @@ void ALilyPond::BuildLightingAndCamera()
 			LC->SetCastShadows(bShadows);
 		}
 		Light->FinishSpawning(FTransform(Rot));
+		return Light;
 	};
 	// Warm morning sun from front-left and above; a cool fill from front-right so shadows are not black.
-	MakeLight(FRotator(-45.f, 70.f, 0.f), LilyTune::SunLux, LilyHex(0xFFF1D6), true);
-	MakeLight(FRotator(-20.f, 120.f, 0.f), LilyTune::FillLux, LilyHex(0xCFE8FF), false);
+	SunLight = MakeLight(FRotator(-45.f, 70.f, 0.f), LilyTune::SunLux, LilyHex(0xFFF1D6), true);
+	FillLight = MakeLight(FRotator(-20.f, 120.f, 0.f), LilyTune::FillLux, LilyHex(0xCFE8FF), false);
 
 	// Fixed exposure so the bright sky does not darken the whole scene.
 	if (APostProcessVolume* PPV = World->SpawnActor<APostProcessVolume>())
@@ -135,15 +157,16 @@ void ALilyPond::BuildScenery()
 
 	// Sky backdrop, horizon glow and sun: they follow the camera sideways so they never run out.
 	SkyActor = World->SpawnActor<ALilyProp>();
-	FLilyArt::Add(SkyActor, SkyActor->Root, ELilyShape::Cube, FVector(0, 14000, 4000), FVector(80000, 100, 30000), Sky);
-	FLilyArt::Add(SkyActor, SkyActor->Root, ELilyShape::Cube, FVector(0, 13800, 250), FVector(80000, 100, 1600), Horizon);
-	FLilyArt::Add(SkyActor, SkyActor->Root, ELilyShape::Sphere, FVector(3200, 13000, 3300), FVector(1300, 100, 1300), LilyHex(0xFFE9A3));
+	SkyBackdrop = FLilyArt::Add(SkyActor, SkyActor->Root, ELilyShape::Cube, FVector(0, 14000, 4000), FVector(80000, 100, 30000), Sky);
+	HorizonBand = FLilyArt::Add(SkyActor, SkyActor->Root, ELilyShape::Cube, FVector(0, 13800, 250), FVector(80000, 100, 1600), Horizon);
+	SunDisc = FLilyArt::Add(SkyActor, SkyActor->Root, ELilyShape::Sphere, FVector(3200, 13000, 3300), FVector(1300, 100, 1300), LilyHex(0xFFE9A3));
+	for (int32 i = 0; i < 90; i++) StarSeeds.Add(FVector2D(Rng.FRandRange(-9000.f, 9000.f), Rng.FRandRange(1500.f, 6500.f)));
 
 	// Rolling hills in two layers; real depth gives natural parallax.
 	ALilyProp* Hills = World->SpawnActor<ALilyProp>();
 	for (float X = -4000.f; X < 16000.f; X += Rng.FRandRange(800.f, 1100.f))
 	{
-		FLilyArt::Add(Hills, Hills->Root, ELilyShape::Sphere, FVector(X, 3000, -150), FVector(Rng.FRandRange(1500, 2200), 700, Rng.FRandRange(600, 800)), LilyHex(0x82C389));
+		NearHills.Add(FLilyArt::Add(Hills, Hills->Root, ELilyShape::Sphere, FVector(X, 3000, -150), FVector(Rng.FRandRange(1500, 2200), 700, Rng.FRandRange(600, 800)), LilyHex(0x82C389)));
 		// meadow flowers dotted on the near hills
 		for (int32 k = 0; k < 3; k++)
 		{
@@ -153,21 +176,21 @@ void ALilyPond::BuildScenery()
 	}
 	for (float X = -6000.f; X < 18000.f; X += Rng.FRandRange(1500.f, 2000.f))
 	{
-		FLilyArt::Add(Hills, Hills->Root, ELilyShape::Sphere, FVector(X, 6500, -300), FVector(Rng.FRandRange(2800, 3800), 1200, Rng.FRandRange(1200, 1500)), LilyHex(0xA7D6B0));
+		FarHills.Add(FLilyArt::Add(Hills, Hills->Root, ELilyShape::Sphere, FVector(X, 6500, -300), FVector(Rng.FRandRange(2800, 3800), 1200, Rng.FRandRange(1200, 1500)), LilyHex(0xA7D6B0)));
 	}
 
 	// The pond itself.
 	ALilyProp* Pond = World->SpawnActor<ALilyProp>();
-	FLilyArt::Add(Pond, Pond->Root, ELilyShape::Cube, FVector(6000, 3500, -200), FVector(30000, 11000, 400), Water);
+	WaterMesh = FLilyArt::Add(Pond, Pond->Root, ELilyShape::Cube, FVector(6000, 3500, -200), FVector(30000, 11000, 400), Water);
 
 	// Clouds drift and wrap around the camera.
 	for (int32 i = 0; i < 9; i++)
 	{
 		ALilyProp* Cloud = World->SpawnActor<ALilyProp>(FVector(i * 1500.f - 4000.f, 9000.f, Rng.FRandRange(1300.f, 2400.f)), FRotator::ZeroRotator);
 		const float S = Rng.FRandRange(0.8f, 1.4f);
-		FLilyArt::Add(Cloud, Cloud->Root, ELilyShape::Sphere, FVector(0, 0, 0), FVector(520, 200, 170) * S, FLinearColor::White);
-		FLilyArt::Add(Cloud, Cloud->Root, ELilyShape::Sphere, FVector(-260 * S, 0, -20 * S), FVector(300, 180, 150) * S, FLinearColor::White);
-		FLilyArt::Add(Cloud, Cloud->Root, ELilyShape::Sphere, FVector(200 * S, 0, 90 * S), FVector(340, 200, 220) * S, FLinearColor::White);
+		CloudParts.Add(FLilyArt::Add(Cloud, Cloud->Root, ELilyShape::Sphere, FVector(0, 0, 0), FVector(520, 200, 170) * S, FLinearColor::White));
+		CloudParts.Add(FLilyArt::Add(Cloud, Cloud->Root, ELilyShape::Sphere, FVector(-260 * S, 0, -20 * S), FVector(300, 180, 150) * S, FLinearColor::White));
+		CloudParts.Add(FLilyArt::Add(Cloud, Cloud->Root, ELilyShape::Sphere, FVector(200 * S, 0, 90 * S), FVector(340, 200, 220) * S, FLinearColor::White));
 		Clouds.Add(Cloud);
 	}
 }
@@ -228,6 +251,8 @@ void ALilyPond::ClearLevel()
 	LevelActors.Reset();
 	Platforms.Reset();
 	Flies.Reset();
+	Wasps.Reset();
+	FireflySeeds.Reset();
 }
 
 void ALilyPond::LoadLevel(int32 N)
@@ -307,11 +332,52 @@ void ALilyPond::LoadLevel(int32 N)
 		F.Sp = Rng.FRandRange(0.8f, 1.35f) * SpeedUp * (F.bGold ? 1.45f : 1.f);
 		F.Ph = Rng.FRandRange(0.f, 2.f * PI);
 	}
-	Total = Left = Flies.Num();
+	Total = Left = Flies.Num();   // the dragonfly below is a bonus and does not count
+
+	// One shimmering dragonfly per pond: eat it for a double jump.
+	{
+		const int32 HostIndex = FMath::Clamp(FMath::FloorToInt(Platforms.Num() * Rng.FRandRange(0.3f, 0.6f)), 1, Platforms.Num() - 1);
+		const FLilyPlatform& P = Platforms[HostIndex];
+		FLilyFly& D = Flies.AddDefaulted_GetRef();
+		D.bDragon = true;
+		D.HX = P.X0 + P.W * 0.5f; D.HZ = P.Top + Rng.FRandRange(150.f, 195.f);
+		D.RX = Rng.FRandRange(110.f, 160.f); D.RZ = Rng.FRandRange(30.f, 45.f);
+		D.Sp = 1.5f + N * 0.05f; D.Ph = Rng.FRandRange(0.f, 2.f * PI);
+	}
+
+	// Wasps patrol from pond 2: touching one costs a heart.
+	{
+		const int32 NumWasps = N < 2 ? 0 : FMath::Min(6, N - 1 + (N - 2) / 2);
+		TArray<int32> WaspHosts;
+		for (int32 i = 2; i < Platforms.Num() - 1; i++) if (Platforms[i].Type != ELilyPlat::Bloom) WaspHosts.Add(i);
+		for (int32 k = 0; k < NumWasps && WaspHosts.Num() > 0; k++)
+		{
+			const int32 Pick = Rng.RandRange(0, WaspHosts.Num() - 1);
+			const FLilyPlatform& P = Platforms[WaspHosts[Pick]];
+			WaspHosts.RemoveAtSwap(Pick);
+			FLilyWasp& Wsp = Wasps.AddDefaulted_GetRef();
+			Wsp.HX = P.X0 + P.W * 0.5f; Wsp.HZ = P.Top + Rng.FRandRange(72.f, 105.f);
+			Wsp.RX = Rng.FRandRange(60.f, 125.f);
+			Wsp.Sp = Rng.FRandRange(0.75f, 1.1f) * (1.f + N * 0.04f);
+			Wsp.Ph = Rng.FRandRange(0.f, 2.f * PI);
+		}
+	}
+
+	// Fireflies drift over night ponds (drawn by the HUD as glowing dots).
+	for (int32 k = 0; k < int32(LevelEnd / 90.f); k++)
+	{
+		FireflySeeds.Add(FVector4(Rng.FRandRange(-200.f, LevelEnd + 200.f), Rng.FRandRange(40.f, 400.f), Rng.FRandRange(0.f, 2.f * PI), Rng.FRandRange(0.4f, 1.f)));
+	}
+
+	SkyIndex = (N - 1) % Skies().Num();
+	ApplySky();
+	BannerText = FString::Printf(TEXT("Pond %d  -  %s"), N, CurrentSky().Name);
+	BannerLife = 2.4f;
 
 	// Visuals
 	for (FLilyPlatform& P : Platforms) BuildPlatformVisual(P);
 	for (FLilyFly& F : Flies) BuildFlyVisual(F);
+	for (FLilyWasp& Wsp : Wasps) BuildWaspVisual(Wsp);
 
 	// Frog and per-level state
 	Frog = FFrogState();
@@ -323,7 +389,91 @@ void ALilyPond::LoadLevel(int32 N)
 	LevelTime = 0.f; Combo = 0;
 	LevelBpm = 100.f + FMath::Min(N - 1, 6) * 4.f;
 	UpdateFlies();
+	UpdateWasps();
 	UpdateCamera(0.f, true);
+}
+
+const FLilySky& ALilyPond::CurrentSky() const
+{
+	return Skies()[FMath::Clamp(SkyIndex, 0, Skies().Num() - 1)];
+}
+
+const FLilySky& ALilyPond::SkyForPond(int32 PondNumber) const
+{
+	return Skies()[(FMath::Max(PondNumber, 1) - 1) % Skies().Num()];
+}
+
+void ALilyPond::ApplySky()
+{
+	const FLilySky& K = CurrentSky();
+	FLilyArt::SetColor(SkyBackdrop, K.Sky);
+	FLilyArt::SetColor(HorizonBand, K.Horizon);
+	FLilyArt::SetColor(SunDisc, K.Sun);
+	if (SunDisc) SunDisc->SetRelativeScale3D(K.bNight ? FVector(8.f, 1.f, 8.f) : FVector(13.f, 1.f, 13.f));
+	FLilyArt::SetColor(WaterMesh, K.Water);
+	for (UStaticMeshComponent* C : NearHills) FLilyArt::SetColor(C, K.HillNear);
+	for (UStaticMeshComponent* C : FarHills) FLilyArt::SetColor(C, K.HillFar);
+	const FLinearColor CloudC = K.bNight ? LilyHex(0x51608F) : (SkyIndex == 2 ? LilyHex(0xFFD6C8) : FLinearColor::White);
+	for (UStaticMeshComponent* C : CloudParts) FLilyArt::SetColor(C, CloudC);
+	if (SunLight) if (ULightComponent* LC = SunLight->GetLightComponent()) { LC->SetIntensity(K.SunLux); LC->SetLightColor(K.SunColor); }
+	if (FillLight) if (ULightComponent* LC = FillLight->GetLightComponent()) { LC->SetIntensity(K.FillLux); }
+}
+
+void ALilyPond::BuildWaspVisual(FLilyWasp& W)
+{
+	ALilyProp* A = GetWorld()->SpawnActor<ALilyProp>();
+	LevelActors.Add(A);
+	W.Actor = A;
+	USceneComponent* Body = NewObject<USceneComponent>(A);
+	Body->SetMobility(EComponentMobility::Movable);
+	Body->SetupAttachment(A->Root);
+	Body->RegisterComponent();
+	A->AddInstanceComponent(Body);
+	W.Body = Body;
+	const FLinearColor Yellow = LilyHex(0xF5C518), Black = LilyHex(0x2B2A33);
+	FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(-5, 0, 0), FVector(22, 13, 13), Yellow, FRotator::ZeroRotator, true);
+	for (float SX : { -9.f, -3.5f }) FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(SX, 0, 0), FVector(3.5f, 13.6f, 13.6f), Black);
+	FLilyArt::Add(A, Body, ELilyShape::Cone, FVector(-18, 0, -1), FVector(4, 4, 9), Black, FRotator(90, 0, 0));    // stinger, pointing back
+	FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(6, 0, 0), FVector(9, 9, 8), Yellow);
+	FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(11, 0, 0.5f), FVector(8, 8, 8), Black);
+	FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(13.5f, -3, 1.5f), FVector(3, 3, 3), FLinearColor::White);
+	FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(13.5f, 3, 1.5f), FVector(3, 3, 3), FLinearColor::White);
+	const FLinearColor WingC(0.88f, 0.95f, 1.f);
+	W.WingL = FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(0, -5, 7), FVector(8, 2, 16), WingC);
+	W.WingR = FLilyArt::Add(A, Body, ELilyShape::Sphere, FVector(0, 5, 7), FVector(8, 2, 16), WingC);
+}
+
+void ALilyPond::UpdateWasps()
+{
+	for (FLilyWasp& W : Wasps)
+	{
+		W.P.X = W.HX + FMath::Sin(GameTime * W.Sp + W.Ph) * W.RX;
+		W.P.Y = W.HZ + FMath::Sin(GameTime * W.Sp * 2.3f + W.Ph) * 12.f;
+		W.Face = FMath::Cos(GameTime * W.Sp + W.Ph) >= 0.f ? 1.f : -1.f;
+	}
+}
+
+void ALilyPond::Sting(const FLilyWasp& W)
+{
+	Hearts--;
+	Sfx(ELilySfx::Sting);
+	Frog.Inv = 1.6f;
+	Burst(FrogWorld(), 14, { LilyHex(0xF5C518), LilyHex(0x2B2A33), Cream }, 220.f, false);
+	FloatText(FrogWorld() + FVector(0, 0, 45), TEXT("Ouch!"), LilyHex(0xFFD2D2), 1.f);
+	if (Tongue.Caught >= 0) { Flies[Tongue.Caught].bCaught = false; Tongue.Caught = -1; }
+	Tongue.Phase = 0; Tongue.Len = 0.f;
+	Frog.VX = (Frog.X >= W.P.X ? 1.f : -1.f) * 300.f;
+	Frog.VZ = 520.f; Frog.Ground = -1; Frog.bCut = true;
+	if (Hearts <= 0) { Frog.Inv = 0.f; GameOver(); }
+}
+
+void ALilyPond::GameOver()
+{
+	SaveProgress();
+	State = ELilyState::Over;      // music re-syncs after the jingle (OverTimer)
+	if (Synth) Synth->SetMusic(ELilySong::Game, LevelBpm, 0.f);
+	OverTimer = 0.9f;
+	Sfx(ELilySfx::Over);
 }
 
 void ALilyPond::BuildPlatformVisual(FLilyPlatform& P)
@@ -454,6 +604,22 @@ void ALilyPond::BuildFlyVisual(FLilyFly& F)
 	LevelActors.Add(A);
 	F.Actor = A;
 	USceneComponent* R = A->Root;
+	if (F.bDragon)
+	{
+		// Dragonfly: long blue-green body with four clear wings (two pairs flap together).
+		const FLinearColor Teal = LilyHex(0x2FD3C0), Blue = LilyHex(0x3A6CFF);
+		FLilyArt::Add(A, R, ELilyShape::Cylinder, FVector(-12, 0, 0), FVector(5, 5, 28), Blue, FRotator(90, 0, 0));
+		FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(3, 0, 0), FVector(12, 8, 8), Teal);
+		FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(10, 0, 0.5f), FVector(8, 9, 8), LilyHex(0x1F9E8F));
+		FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(12, -3, 2), FVector(3.5f, 3.5f, 3.5f), LilyHex(0xE8FFFB));
+		FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(12, 3, 2), FVector(3.5f, 3.5f, 3.5f), LilyHex(0xE8FFFB));
+		const FLinearColor WingC(0.8f, 0.97f, 1.f);
+		F.WingL = FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(4, -2, 9), FVector(7, 1.5f, 24), WingC, FRotator(0, 0, 0));
+		F.WingR = FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(-2, 2, 9), FVector(6, 1.5f, 22), WingC, FRotator(0, 0, 0));
+		FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(0, 0, 0), FVector(36, 20, 36), LilyHex(0x96F0E6) * 0.35f);   // glow hint
+		A->SetActorScale3D(FVector(1.15f));
+		return;
+	}
 	const FLinearColor BodyC = F.bGold ? LilyHex(0xE3A91F) : LilyHex(0x2B2A33);
 	const FLinearColor HeadC = F.bGold ? LilyHex(0xC48812) : LilyHex(0x1C1B22);
 	FLilyArt::Add(A, R, ELilyShape::Sphere, FVector(0, 0, 0), FVector(13, 10, 9), BodyC);
@@ -594,6 +760,8 @@ void ALilyPond::Step(float Dt)
 
 	UpdatePlatforms(Dt);
 	UpdateFlies();
+	UpdateWasps();
+	if (BannerLife > 0.f) BannerLife -= Dt;
 
 	if (State == ELilyState::Play || State == ELilyState::Clearing)
 	{
@@ -696,6 +864,14 @@ void ALilyPond::UpdateFrog(float Dt, bool bLeft, bool bRight, bool bJumpHeld)
 		Burst(FVector(F.X, 0, F.Z + 2), 5, { FLinearColor(1, 1, 1) }, 80.f, false);
 		Sfx(ELilySfx::Jump);
 	}
+	else if (F.Buffer > 0.f && F.Ground < 0 && F.Power > 0.f && !F.bAirJumped)
+	{
+		// Dragonfly power: one extra jump in mid-air.
+		F.VZ = LilyTune::JumpV * 0.92f; F.bAirJumped = true; F.Buffer = 0.f; F.bCut = false; F.Air = 0.f;
+		Burst(FVector(F.X, 0, F.Z + 6), 12, { LilyHex(0x7FE3D6), LilyHex(0xB9F3FF), Cream }, 160.f, false);
+		Sfx(ELilySfx::Hop2);
+	}
+	if (F.Power > 0.f) F.Power = FMath::Max(0.f, F.Power - Dt);
 
 	if (F.Ground >= 0) F.X += Platforms[F.Ground].DX;
 	F.X += F.VX * Dt;
@@ -743,6 +919,13 @@ void ALilyPond::UpdateFrog(float Dt, bool bLeft, bool bRight, bool bJumpHeld)
 		const FLilyFly& Fl = Flies[i];
 		if (Fl.bAlive && !Fl.bCaught && FVector2D::Distance(Fl.P, C) < 27.f) Eat(i);
 	}
+	if (State == ELilyState::Play && F.Inv <= 0.f && Hearts > 0)
+	{
+		for (const FLilyWasp& W : Wasps)
+		{
+			if (FVector2D::Distance(W.P, C) < 25.f) { Sting(W); break; }
+		}
+	}
 
 	// Idle croak
 	if (F.Ground >= 0 && FMath::Abs(F.VX) < 1.f)
@@ -764,7 +947,7 @@ void ALilyPond::LandOn(int32 Index)
 		return;
 	}
 	const float Impact = FMath::Clamp(-Frog.VZ / 1100.f, 0.25f, 1.f);
-	Frog.Z = P.Top; Frog.VZ = 0.f; Frog.Ground = Index; Frog.Land = Impact; Frog.Safe = Index;
+	Frog.Z = P.Top; Frog.VZ = 0.f; Frog.Ground = Index; Frog.Land = Impact; Frog.Safe = Index; Frog.bAirJumped = false;
 	if (P.Type == ELilyPlat::Pad) Burst(FVector(Frog.X, 0, P.Top), 6, { LilyHex(0xBFE9F5), FLinearColor::White }, 120.f, true);
 	Sfx(ELilySfx::Land);
 }
@@ -779,17 +962,13 @@ void ALilyPond::Hurt()
 
 	if (Hearts <= 0)
 	{
-		SaveProgress();
-		State = ELilyState::Over;      // music re-syncs after the jingle (OverTimer)
-		if (Synth) Synth->SetMusic(ELilySong::Game, LevelBpm, 0.f);
-		OverTimer = 0.9f;
-		Sfx(ELilySfx::Over);
+		GameOver();
 		Frog.Z = -400.f; Frog.VZ = 0.f;
 		return;
 	}
 	const FLilyPlatform& P = Platforms[FMath::Clamp(Frog.Safe, 0, Platforms.Num() - 1)];
 	Frog.X = P.X + P.W * 0.5f; Frog.Z = P.Top + 140.f;
-	Frog.VX = Frog.VZ = 0.f; Frog.Ground = -1; Frog.Inv = 1.6f; Frog.bCut = true;
+	Frog.VX = Frog.VZ = 0.f; Frog.Ground = -1; Frog.Inv = 1.6f; Frog.bCut = true; Frog.bAirJumped = false;
 }
 
 void ALilyPond::FireTongue()
@@ -866,6 +1045,19 @@ void ALilyPond::Eat(int32 Index)
 {
 	FLilyFly& F = Flies[Index];
 	if (!F.bAlive) return;
+	if (F.bDragon)
+	{
+		F.bAlive = false; F.bCaught = false;
+		Frog.Power = 12.f; Frog.bAirJumped = false; Frog.Gulp = 1.f;
+		Score += 25;
+		const FVector2D M = Mouth();
+		const FVector At(M.X, 0.f, M.Y + 6.f);
+		Burst(At, 24, { LilyHex(0x7FE3D6), LilyHex(0xB9F3FF), Cream, LilyHex(0x9A8CFF) }, 300.f, false);
+		FloatText(At + FVector(0, 0, 34), TEXT("Super hop!"), LilyHex(0xB9F3FF), 1.2f);
+		FloatText(At + FVector(0, 0, 64), TEXT("+25"), Cream, 0.9f);
+		Sfx(ELilySfx::Power); Sfx(ELilySfx::Gulp);
+		return;
+	}
 	F.bAlive = false; F.bCaught = false;
 	Left--;
 	Combo = (GameTime - LastEat < 2.5f) ? Combo + 1 : 1;
@@ -945,7 +1137,7 @@ bool ALilyPond::NearestFlyWorld(FVector& Out, bool& bGold) const
 	float BestD = 1e9f; bool bFound = false;
 	for (const FLilyFly& F : Flies)
 	{
-		if (!F.bAlive) continue;
+		if (!F.bAlive || F.bDragon) continue;
 		const float D = FVector2D::Distance(F.P, FVector2D(Frog.X, Frog.Z + 20.f));
 		if (D < BestD) { BestD = D; Out = FVector(F.P.X, 0.f, F.P.Y); bGold = F.bGold; bFound = true; }
 	}
@@ -966,8 +1158,8 @@ void ALilyPond::UpdateCamera(float Dt, bool bSnap)
 		CamPos.X += (TX - CamPos.X) * FMath::Min(1.f, Dt * 5.f);
 		CamPos.Z += (TZ - CamPos.Z) * FMath::Min(1.f, Dt * 4.f);
 	}
-	CamPos.X = FMath::Clamp(CamPos.X, 490.f, FMath::Max(490.f, LevelEnd - 530.f));
-	CamPos.Z = FMath::Max(CamPos.Z, LilyTune::CamRestZ);
+	CamPos.X = FMath::Clamp(CamPos.X, 490.0, FMath::Max(490.0, double(LevelEnd) - 530.0));
+	CamPos.Z = FMath::Max(CamPos.Z, double(LilyTune::CamRestZ));
 	const float PitchLift = FMath::Tan(FMath::DegreesToRadians(-LilyTune::CamPitch)) * LilyTune::CamDistance;
 	if (Camera) Camera->SetActorLocation(FVector(CamPos.X, -LilyTune::CamDistance, CamPos.Z + PitchLift));
 	if (SkyActor) SkyActor->SetActorLocation(FVector(CamPos.X * 0.9f, 0.f, 0.f));
@@ -994,9 +1186,44 @@ void ALilyPond::UpdateVisuals(float Dt)
 		F.Actor->SetActorHiddenInGame(!F.bAlive);   // title-screen flies come back after the attract-mode frog eats them
 		if (!F.bAlive) continue;
 		F.Actor->SetActorLocation(FVector(F.P.X, 0.f, F.P.Y));
+		if (F.bDragon)
+		{
+			const bool bRight = FMath::Cos(GameTime * F.Sp * 1.3f + F.Ph) >= 0.f;
+			F.Actor->SetActorRotation(FRotator(0.f, bRight ? 0.f : 180.f, 0.f));
+			const float Beat = FMath::Sin(GameTime * 55.f + F.Ph) * 25.f;
+			if (F.WingL) F.WingL->SetRelativeRotation(FRotator(-15.f + Beat, 0, 0));
+			if (F.WingR) F.WingR->SetRelativeRotation(FRotator(15.f - Beat, 0, 0));
+			continue;
+		}
 		const float Flap = FMath::Sin(GameTime * 70.f + F.Ph) * 35.f;
 		if (F.WingL) F.WingL->SetRelativeRotation(FRotator(0, 0, -25.f - Flap));
 		if (F.WingR) F.WingR->SetRelativeRotation(FRotator(0, 0, 25.f + Flap));
+	}
+
+	// Wasps
+	for (FLilyWasp& W : Wasps)
+	{
+		if (!W.Actor) continue;
+		W.Actor->SetActorLocation(FVector(W.P.X, 0.f, W.P.Y));
+		if (W.Body) W.Body->SetRelativeRotation(FRotator(0.f, W.Face > 0.f ? 0.f : 180.f, 0.f));
+		const float Flap = FMath::Sin(GameTime * 65.f + W.Ph) * 35.f;
+		if (W.WingL) W.WingL->SetRelativeRotation(FRotator(0, 0, -20.f - Flap));
+		if (W.WingR) W.WingR->SetRelativeRotation(FRotator(0, 0, 20.f + Flap));
+	}
+
+	// Night glow for the HUD: stars, fireflies, and a soft light around each fly so it stays visible.
+	Stars.Reset(); Fireflies.Reset(); NightFlies.Reset();
+	if (CurrentSky().bNight)
+	{
+		const float SkyX = CamPos.X * 0.9f;
+		for (const FVector2D& S : StarSeeds) Stars.Add(FVector(SkyX + S.X, 12900.f, S.Y));
+		for (const FVector4& Seed : FireflySeeds)
+		{
+			const float FX = float(Seed.X) + FMath::Sin(GameTime * float(Seed.W) + float(Seed.Z)) * 30.f;
+			if (FMath::Abs(FX - CamPos.X) > 1400.f) continue;
+			Fireflies.Add(FVector(FX, -40.f, float(Seed.Y) + FMath::Sin(GameTime * float(Seed.W) * 1.7f + float(Seed.Z)) * 18.f));
+		}
+		for (const FLilyFly& F : Flies) if (F.bAlive && !F.bGold && !F.bDragon) NightFlies.Add(FVector(F.P.X, 0.f, F.P.Y));
 	}
 
 	// Frog

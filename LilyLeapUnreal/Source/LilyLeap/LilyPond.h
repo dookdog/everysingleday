@@ -7,6 +7,7 @@
 
 class ALilyProp;
 class ACameraActor;
+class ADirectionalLight;
 class ULilySynth;
 class UStaticMeshComponent;
 
@@ -32,12 +33,34 @@ struct FLilyFly
 	float RX = 0.f, RZ = 0.f;   // loop size
 	float Sp = 1.f, Ph = 0.f;
 	bool bGold = false;
+	bool bDragon = false;   // the dragonfly: grants a double jump, not counted toward clearing the pond
 	bool bAlive = true;
 	bool bCaught = false;
 	FVector2D P = FVector2D::ZeroVector;
 	ALilyProp* Actor = nullptr;
 	USceneComponent* WingL = nullptr;
 	USceneComponent* WingR = nullptr;
+};
+
+/** Wasps patrol above platforms from pond 2 on; touching one costs a heart. */
+struct FLilyWasp
+{
+	float HX = 0.f, HZ = 0.f, RX = 80.f, Sp = 1.f, Ph = 0.f;
+	FVector2D P = FVector2D::ZeroVector;
+	float Face = 1.f;
+	ALilyProp* Actor = nullptr;
+	USceneComponent* Body = nullptr;
+	USceneComponent* WingL = nullptr;
+	USceneComponent* WingR = nullptr;
+};
+
+/** Each pond has its own time of day. */
+struct FLilySky
+{
+	const TCHAR* Name = TEXT("Morning");
+	FLinearColor Sky, Horizon, Sun, HillNear, HillFar, Water, SunColor;
+	float SunLux = 3.5f, FillLux = 1.3f;
+	bool bNight = false;
 };
 
 struct FLilyParticle
@@ -89,7 +112,17 @@ public:
 	bool bMusicOn = true, bSoundOn = true, bTouchUI = false;
 	TArray<FLilyText> Texts;
 	FVector FrogWorld() const { return FVector(Frog.X, 0.f, Frog.Z + 18.f); }
+	/** Nearest fly that counts toward clearing the pond (the dragonfly is skipped). */
 	bool NearestFlyWorld(FVector& Out, bool& bGold) const;
+	float SuperHopLeft() const { return Frog.Power; }
+	const FLilySky& CurrentSky() const;
+	const FLilySky& SkyForPond(int32 PondNumber) const;
+	FString BannerText;
+	float BannerLife = 0.f;
+	/** World positions of glowing things the HUD draws over the scene at night. */
+	TArray<FVector> Fireflies;
+	TArray<FVector> Stars;
+	TArray<FVector> NightFlies;
 
 private:
 	struct FFrogState
@@ -97,6 +130,8 @@ private:
 		float X = 90.f, Z = 90.f, VX = 0.f, VZ = 0.f, Face = 1.f;
 		int32 Ground = -1, Safe = 0;
 		float Coyote = 0.f, Buffer = 0.f, Air = 0.f, Land = 0.f, Inv = 0.f, Gulp = 0.f, Croak = 4.f;
+		float Power = 0.f;        // seconds of dragonfly double jump left
+		bool bAirJumped = false;
 		bool bCut = true;
 	};
 	struct FTongueState
@@ -115,6 +150,11 @@ private:
 	void ClearLevel();
 	void BuildPlatformVisual(FLilyPlatform& P);
 	void BuildFlyVisual(FLilyFly& F);
+	void BuildWaspVisual(FLilyWasp& W);
+	void ApplySky();
+	void UpdateWasps();
+	void Sting(const FLilyWasp& W);
+	void GameOver();
 	void AddDecor(ALilyProp* Owner, float X, float Top, FRandomStream& Rng);
 
 	// Game flow
@@ -150,12 +190,25 @@ private:
 	UPROPERTY() TObjectPtr<ALilyProp> FrogActor;
 	UPROPERTY() TObjectPtr<ALilyProp> FxActor;
 	UPROPERTY() TObjectPtr<ALilyProp> SkyActor;
+	UPROPERTY() TObjectPtr<ADirectionalLight> SunLight;
+	UPROPERTY() TObjectPtr<ADirectionalLight> FillLight;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> SkyBackdrop;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> HorizonBand;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> SunDisc;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> WaterMesh;
+	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> NearHills;
+	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> FarHills;
+	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> CloudParts;
 	UPROPERTY() TArray<TObjectPtr<ALilyProp>> LevelActors;
 	UPROPERTY() TArray<TObjectPtr<ALilyProp>> Clouds;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> FxPool;
 
 	TArray<FLilyPlatform> Platforms;
 	TArray<FLilyFly> Flies;
+	TArray<FLilyWasp> Wasps;
+	TArray<FVector4> FireflySeeds;   // x, z, phase, speed
+	TArray<FVector2D> StarSeeds;     // sideways offset and height on the night sky
+	int32 SkyIndex = 0;
 	TArray<FLilyParticle> Particles;
 	FLilyFrogRig Rig;
 	FFrogState Frog;

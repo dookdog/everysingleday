@@ -3,9 +3,15 @@ Binaries/
 Intermediate/
 Saved/
 DerivedDataCache/
-Build/
+Packaged/
 .vs/
 .idea/
 *.sln
 *.xcworkspace
 *.xcodeproj
+
+# Build/ is generated too, except the iPhone app icon kept in Build/IOS/Resources
+Build/*
+!Build/IOS/
+Build/IOS/*
+!Build/IOS/Resources/

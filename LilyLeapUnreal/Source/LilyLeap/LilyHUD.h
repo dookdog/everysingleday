@@ -57,6 +57,8 @@ private:
 	void Label(const FString& Text, float X, float Y, float Scale, const FLinearColor& Col, bool bCenter, bool bShadow = false);
 	FVector2D Measure(const FString& Text, float Scale);
 
+	void DrawNightGlow(ALilyPond* Pond);
+	void DrawBanner(ALilyPond* Pond);
 	void DrawStatus(ALilyPond* Pond);
 	void DrawWorldTexts(ALilyPond* Pond);
 	void DrawFlyArrow(ALilyPond* Pond);
