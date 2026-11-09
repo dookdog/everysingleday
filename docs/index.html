@@ -38,6 +38,14 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--leaf);color:var(
 #c{position:fixed;inset:0;width:100%;height:100%;display:block}
 #grade{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 55%,rgba(34,20,4,.36) 100%)}
 #play{position:fixed;inset:0;overflow:hidden}
+#flare{position:absolute;inset:0;pointer-events:none;overflow:hidden;mix-blend-mode:screen}
+#flare i{position:absolute;left:0;top:0;border-radius:50%;opacity:0;will-change:transform,opacity}
+#flare .veil{inset:0;width:auto;height:auto;border-radius:0;background:#fff6e0}
+#flare .glare{width:520px;height:520px;margin:-260px 0 0 -260px;background:radial-gradient(circle,rgba(255,250,235,.95) 0,rgba(255,226,160,.55) 9%,rgba(255,200,120,.18) 30%,rgba(255,190,110,0) 62%)}
+#flare .streak{width:150vw;height:6px;margin:-3px 0 0 -75vw;border-radius:3px;background:linear-gradient(90deg,rgba(140,190,255,0),rgba(170,210,255,.55) 35%,rgba(255,250,240,.9) 50%,rgba(170,210,255,.55) 65%,rgba(140,190,255,0))}
+#flare .gh{width:90px;height:90px;margin:-45px 0 0 -45px}
+#flare .hex{border-radius:0;clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%)}
+#flare .ring{background:radial-gradient(circle,rgba(0,0,0,0) 58%,rgba(160,255,200,.5) 66%,rgba(255,140,200,.35) 72%,rgba(0,0,0,0) 80%)!important}
 #vig{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(200,20,10,.75) 100%)}
 #hud{position:absolute;pointer-events:none;
   top:calc(env(safe-area-inset-top,0px) + 10px);bottom:calc(env(safe-area-inset-bottom,0px) + 10px);
@@ -156,6 +164,7 @@ label.sens input{width:150px;accent-color:var(--gold)}
 <div id="grade"></div>
 <div id="play" hidden>
   <div id="vig"></div>
+  <div id="flare" aria-hidden="true"><i class="veil"></i><i class="glare"></i><i class="streak"></i><i class="gh"></i><i class="gh"></i><i class="gh hex"></i><i class="gh"></i><i class="gh hex"></i><i class="gh ring"></i><i class="gh"></i></div>
   <div id="joyBase"><div id="joyKnob"></div></div>
   <div id="cross"><i></i><i></i><i></i><i></i><b></b></div>
   <div id="hitm"></div>
@@ -367,6 +376,47 @@ const MAT={
   gold:new THREE.MeshStandardMaterial({color:0xe0b040,metalness:1,roughness:0.28,envMap:ENV,envMapIntensity:1.3})
 };
 
+
+/* ---------- sky: blue upper atmosphere, sun, clouds ---------- */
+// One sun direction drives the sky disc, the sunlight and shadows, the light shafts and the lens flare.
+const SUN_DIR=new THREE.Vector3(40,52,18).normalize();
+camera.far=1200;camera.updateProjectionMatrix();
+const skyMesh=new THREE.Mesh(new THREE.SphereGeometry(1000,48,24),new THREE.ShaderMaterial({
+  side:THREE.BackSide,depthWrite:false,fog:false,
+  uniforms:{sunDir:{value:SUN_DIR},horizon:{value:new THREE.Color(0xb9d2cf)},haze:{value:new THREE.Color(FOG)},mid:{value:new THREE.Color(0x63a2e0)},zenith:{value:new THREE.Color(0x1d5bb6)}},
+  vertexShader:'varying vec3 vDir;void main(){vDir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+  fragmentShader:`uniform vec3 sunDir,horizon,haze,mid,zenith;varying vec3 vDir;
+    void main(){vec3 d=normalize(vDir);float h=d.y;
+      vec3 c=mix(haze,horizon,smoothstep(-0.05,0.06,h));c=mix(c,mid,smoothstep(0.06,0.32,h));c=mix(c,zenith,smoothstep(0.32,0.95,h));
+      float s=max(dot(d,sunDir),0.);
+      c+=vec3(1.,.82,.55)*pow(s,6.)*0.28+vec3(1.,.93,.78)*pow(s,48.)*0.55+vec3(1.,.97,.9)*pow(s,400.)*0.9;
+      c=mix(c,vec3(1.,.99,.95)*1.7,smoothstep(.99955,.99975,s));
+      gl_FragColor=vec4(c,1.);}`}));
+skyMesh.renderOrder=-2;skyMesh.frustumCulled=false;scene.add(skyMesh);
+const cloudLayers=[[200,0.0055,0.5,0.95],[290,0.0033,0.56,0.7]].map(([y,scale,cover,alpha],i)=>{
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(2400,2400),new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,side:THREE.DoubleSide,
+    uniforms:{time:{value:0},sunDir:{value:SUN_DIR},camPos:{value:new THREE.Vector3()},scale:{value:scale},cover:{value:cover},alpha:{value:alpha},drift:{value:new THREE.Vector2(i?0.0022:0.004,i?0.0009:0.0016)}},
+    vertexShader:'varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}',
+    fragmentShader:`uniform float time,scale,cover,alpha;uniform vec2 drift;uniform vec3 sunDir,camPos;varying vec3 vW;
+      float hs(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+      float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hs(i),hs(i+vec2(1,0)),f.x),mix(hs(i+vec2(0,1)),hs(i+vec2(1,1)),f.x),f.y);}
+      float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*vn(p);p=p*2.02+vec2(1.7,9.2);a*=.5;}return s;}
+      void main(){vec2 uv=vW.xz*scale+time*drift;
+        float c=fbm(uv),body=smoothstep(cover,cover+0.24,c);
+        float top=fbm(uv*1.9+vec2(4.3,1.1)+time*drift*1.5);
+        vec3 dir=normalize(vW-camPos);float toSun=pow(max(dot(dir,sunDir),0.),5.);
+        vec3 col=mix(vec3(.66,.71,.79),vec3(1.,.99,.97),smoothstep(.3,.75,top));
+        col=mix(col,vec3(1.,.92,.78),toSun*.6);
+        float rim=smoothstep(cover,cover+.06,c)*(1.-smoothstep(cover+.06,cover+.2,c));col+=vec3(1.,.9,.7)*rim*toSun*.8;
+        float dist=length(vW.xz-camPos.xz),fade=(1.-smoothstep(650.,1150.,dist))*smoothstep(.02,.2,dir.y);
+        gl_FragColor=vec4(col,body*alpha*fade);}`}));
+  m.rotation.x=-Math.PI/2;m.position.y=y;m.renderOrder=-1;m.frustumCulled=false;scene.add(m);return m});
+function updSky(dt){
+  skyMesh.position.copy(camera.position);
+  for(const c of cloudLayers){c.position.x=camera.position.x;c.position.z=camera.position.z;c.material.uniforms.time.value=time;c.material.uniforms.camPos.value.copy(camera.position)}
+}
+const OCCLUDERS=[];
+
 /* ---------- terrain ---------- */
 const WATER=-1.7, ARENA=86, PYR=[9,7,5,3], TIER=0.75;
 function baseH(x,z){return Math.sin(x*0.045)*1.9+Math.cos(z*0.052)*1.7+Math.sin((x+z)*0.1)*0.75+Math.sin(x*0.19-z*0.23)*0.3}
@@ -400,7 +450,7 @@ const floorH=(x,z)=>Math.max(hgt(x,z),WATER-0.9);
   const sg=new THREE.SphereGeometry(200,24,12), sc=new Float32Array(sg.attributes.position.count*3), top=new THREE.Color(0xffe2a8), hor=new THREE.Color(FOG);
   for(let i=0;i<sg.attributes.position.count;i++){const y=sg.attributes.position.getY(i)/200;c.copy(hor).lerp(top,clamp(y*1.6,0,1));sc[i*3]=c.r;sc[i*3+1]=c.g;sc[i*3+2]=c.b}
   sg.setAttribute('color',new THREE.BufferAttribute(sc,3));
-  scene.add(new THREE.Mesh(sg,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false,depthWrite:false,toneMapped:false})));
+
 }
 
 /* ---------- obstacles, temple ---------- */
@@ -454,7 +504,7 @@ function inst(geo,mat,n){const m=new THREE.InstancedMesh(geo,mat,n);m.frustumCul
   const tGeo=new THREE.CylinderGeometry(0.33,0.55,1,7); tGeo.translate(0,0.5,0);
   const NT=300;
   const trunks=inst(tGeo,new THREE.MeshPhongMaterial({map:TX.bark,normalMap:TX.barkN,normalScale:new THREE.Vector2(1.5,1.5),shininess:4,specular:0x111111}),NT), canopy=inst(new THREE.IcosahedronGeometry(1,1),lam(0xffffff),NT*3);
-  trunks.castShadow=true;trunks.receiveShadow=true;canopy.castShadow=true;
+  trunks.castShadow=true;trunks.receiveShadow=true;canopy.castShadow=true;OCCLUDERS.push(trunks,canopy);
   // Leaf cards: alpha-tested clusters of real leaf shapes, tinted per instance, casting dappled shadows.
   const cardGeo=new THREE.PlaneGeometry(1,1);
   const leafMat=new THREE.MeshLambertMaterial({map:TX.leaf,alphaTest:0.45,side:THREE.DoubleSide});
@@ -531,7 +581,7 @@ function inst(geo,mat,n){const m=new THREE.InstancedMesh(geo,mat,n);m.frustumCul
   // light shafts
   const shaftMat=new THREE.MeshBasicMaterial({color:0xffe2a0,transparent:true,opacity:0.03,toneMapped:false,blending:THREE.AdditiveBlending,depthWrite:false,fog:false,side:THREE.DoubleSide});
   for(let i=0;i<9;i++){const a=srnd()*TAU,r=8+srnd()*50;
-    const m=new THREE.Mesh(new THREE.CylinderGeometry(1.2,3.6,46,12,1,true),shaftMat); m.position.set(Math.sin(a)*r,18,Math.cos(a)*r); m.rotation.set(0.22,0,0.32); scene.add(m)}
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(1.2,3.6,46,12,1,true),shaftMat); m.position.set(Math.sin(a)*r,18,Math.cos(a)*r); m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),SUN_DIR); scene.add(m)}
 }
 
 /* ---------- textures ---------- */
@@ -1864,6 +1914,37 @@ function pollPad(){
   pad.prev=g.buttons.map(x=>!!x&&(x.pressed||x.value>0.35));
 }
 
+
+/* ---------- lens flare: look at or near the sun ---------- */
+const FL={el:null,parts:[],vis:0,occl:1,tick:0,ray:new THREE.Raycaster(),I:0};
+{
+  FL.el=$('flare');const kids=[...FL.el.children];
+  FL.veil=kids[0];FL.glare=kids[1];FL.streak=kids[2];
+  // ghost: position along the sun->centre line, size, colour
+  const spec=[[0.35,46,'rgba(255,190,110,.55)'],[0.62,24,'rgba(120,220,255,.6)'],[0.88,70,'rgba(140,255,170,.32)'],[1.2,34,'rgba(255,140,90,.45)'],[1.45,96,'rgba(120,160,255,.28)'],[1.75,150,''],[2.1,40,'rgba(255,230,140,.5)']];
+  kids.slice(3).forEach((el,i)=>{const [t,sz,c]=spec[i];el.style.width=el.style.height=sz+'px';el.style.margin=(-sz/2)+'px 0 0 '+(-sz/2)+'px';
+    if(c)el.style.background=`radial-gradient(circle,${c} 0,${c.replace(/[\d.]+\)$/,'0)')} 70%)`;FL.parts.push({el,t})});
+  FL.ray.far=600;
+}
+function updFlare(dt){
+  const W=window.innerWidth,H=window.innerHeight;
+  vP.copy(SUN_DIR).multiplyScalar(500).add(camera.position).project(camera);
+  camera.getWorldDirection(vD);const facing=vD.dot(SUN_DIR);
+  const inFront=vP.z<1&&facing>0,onScreen=inFront&&Math.abs(vP.x)<1.25&&Math.abs(vP.y)<1.25;
+  // Is the sun behind leaves or trunks? Test a ray every few frames and ease the result for a soft, dappled flare.
+  if(onScreen&&++FL.tick%4===0){FL.ray.set(camera.position,SUN_DIR);const hit=FL.ray.intersectObjects(OCCLUDERS,false);FL.occl=hit.length?0:1}
+  FL.vis+=((onScreen?FL.occl:0)-FL.vis)*Math.min(1,dt*9);
+  const near=clamp((facing-Math.cos(40*Math.PI/180))/(1-Math.cos(40*Math.PI/180)),0,1);
+  const I=FL.vis*near*near*(state==='pause'?0:1)*(1-adsT*0.4);FL.I=I;
+  const sx=(vP.x*0.5+0.5)*W,sy=(-vP.y*0.5+0.5)*H,cx=W/2,cy=H/2,vx=cx-sx,vy=cy-sy;
+  FL.glare.style.opacity=(I*0.9).toFixed(3);FL.glare.style.transform=`translate(${sx}px,${sy}px) scale(${0.6+I*0.7})`;
+  FL.streak.style.opacity=(I*0.7).toFixed(3);FL.streak.style.transform=`translate(${sx}px,${sy}px) scaleY(${0.6+I})`;
+  FL.veil.style.opacity=(Math.pow(I,2)*0.22).toFixed(3);
+  for(const p of FL.parts){p.el.style.opacity=(I*0.85).toFixed(3);p.el.style.transform=`translate(${sx+vx*p.t}px,${sy+vy*p.t}px)`}
+  // The eye adapts: the scene dims a little when staring into the sun.
+  renderer.toneMappingExposure=1.02-0.2*I;
+}
+
 /* ---------- main loop ---------- */
 W=WEAP.map((w,i)=>({owned:i<3,mag:w.mag,res:w.res}));
 showWeapon(1);
@@ -1880,6 +1961,7 @@ function frame(now){
   else if(state==='over'){camera.position.y+=(P.fy+0.4-camera.position.y)*Math.min(1,dt*3);camera.rotation.z+=(0.5-camera.rotation.z)*Math.min(1,dt*2);updEnemies(dt);updPhysics(dt);updFX(dt)}
   // Keep the sun's shadow map centred on the action.
   {const [fx,fz]=focusXZ();sun.position.set(fx+40,52,fz+18);sun.target.position.set(fx,0,fz);sun.target.updateMatrixWorld();TX.waterN.offset.set(time*0.012,time*0.008)}
+  updSky(dt);if(state!=='pause')updFlare(dt);
   renderer.clear();
   renderer.render(scene,camera);
   if(state==='play'||state==='pause'){renderer.clearDepth();renderer.render(wScene,wCam)}
