@@ -199,6 +199,7 @@ label.sens input{width:150px;accent-color:var(--gold)}
       <button class="ghost" id="restartBtn">RESTART</button>
       <button class="ghost" id="soundBtn">SOUND ON</button>
       <button class="ghost" id="musicBtn">MUSIC ON</button>
+      <button class="ghost" id="gyroBtn">GYRO AIM OFF</button>
     </div>
     <label class="sens" for="sens">AIM SPEED <input type="range" id="sens" min="0.4" max="2.2" step="0.05" value="1"></label>
   </div>
@@ -228,7 +229,7 @@ if(!window.THREE){ $('hint').textContent='The 3D engine could not load. Check yo
 const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
 if(!isTouch) document.body.classList.add('desk');
 const HINT_BASE=isTouch
-  ? 'Left stick moves; push past the ring to sprint. Drag the right side to look. Fire with either thumb, and slide FIRE to aim while shooting. AIM zooms down the sights.'
+  ? 'Left stick moves in any direction; push past the ring to sprint. Drag the right side to look all the way around, or hold your thumb at the right edge to keep turning. Double-tap to turn around. Fire with either thumb; AIM zooms the sights. Gyro aim is in the pause menu.'
   : 'WASD move · Shift sprint · Mouse aim · Click fire · Right-click aim down sights · 1–7 or wheel swaps weapons · R reload · Space jump · Esc pause';
 $('hint').textContent=HINT_BASE;
 
@@ -905,6 +906,10 @@ const SFX={
   smg(){nz(0.03,4200,0.8,0.7,'highpass');nz(0.09,2000,0.6,0.5);tn(180,60,0.08,'sine',0.35);tn(3000,2400,0.008,'square',0.03,0.02)},
   shotgun(){nz(0.05,3000,0.7,1.1,'highpass');nz(0.42,900,0.5,1.1);tn(85,28,0.38,'sine',0.85);nz(0.25,300,0.8,0.5,'lowpass',80,0.05)},
   pump(){nz(0.08,1800,2,0.35,'bandpass',900);tn(700,500,0.03,'square',0.1,0.09);nz(0.07,2200,2,0.3,'bandpass',1200,0.14)},
+  step(kind){const v=0.6+Math.random()*0.4;
+    if(kind==='water'){nz(0.2,1100,0.7,0.22*v,'lowpass',380)}
+    else if(kind==='stone'){tn(R(150,190),80,0.05,'sine',0.13*v);nz(0.035,3200,1,0.08*v,'highpass')}
+    else{nz(0.1,R(1800,2600),0.9,0.13*v,'bandpass',800);tn(R(90,120),60,0.06,'sine',0.08*v)}},
   headshot(){tn(1900,2600,0.1,'triangle',0.12);tn(3800,4400,0.06,'sine',0.05,0.02)},
   reloadSeq(d,shells){
     if(shells){for(let i=0;i<4;i++){nz(0.05,2400,2,0.25,'bandpass',undefined,0.25+i*d*0.14);tn(900,700,0.02,'square',0.06,0.27+i*d*0.14)}
@@ -1201,6 +1206,8 @@ let state='title', wave=0, waveState='break', waveTimer=0, queue=[], spawnT=0, s
 let cur=1, pend=1, swT=0, cooldown=0, reloading=false, reloadT=0, pendReload=false, swingT=0, vmKick=0, bobT=0, moveAmt=0, swayX=0, swayY=0;
 const SPR={p:new THREE.Vector3(),v:new THREE.Vector3(),r:new THREE.Vector3(),rv:new THREE.Vector3()};
 let slideT=0, pumpT=0, boltT=0, burstN=0, burstIdle=0, lastYaw=0, lastPitch=0, wasGround=true, landDip=0;
+let headPhase=0, headYaw=0, headRoll=0, turnAround=0, padHold=0, gyroOn=false, gyroLast=0;
+const PITCH=1.55;
 let ads=false, adsT=0, lookPrevX=0, lookPrevY=0, lookAccX=0, lookAccY=0, assistK=1;
 let fireHeld=0, mouseDown=false, hurtT=0, shake=0, flashT=0, flashI=0, muzzleT=0, time=0;
 let sens=+store.get('lionel-sens','1')||1; $('sens').value=sens;
@@ -1339,7 +1346,7 @@ function fire(){
   cooldown=w.rate;
   camera.getWorldDirection(aim);
   {const k=w.kick*(ads?0.7:1)*R(0.85,1.15);burstN++;burstIdle=0;
-   P.pitch=clamp(P.pitch+k*0.3,-1.4,1.4);P.kick+=k*0.7;
+   P.pitch=clamp(P.pitch+k*0.3,-PITCH,PITCH);P.kick+=k*0.7;
    P.kickYaw=(P.kickYaw||0)+(R(-0.35,0.35)+(w.n==='MONSOON'?Math.sin(burstN*0.55)*0.5:0))*k;
    // Viewmodel springs: thrown back, muzzle climbs, a little roll and twist.
    const vk=w.vk||[0.5,3,1];SPR.v.z+=vk[0]*(ads?0.6:1);SPR.rv.x+=vk[1]*(ads?0.5:1);SPR.rv.z+=R(-1,1)*vk[2];SPR.rv.y+=R(-1,1)*vk[2]*0.6;
@@ -1413,6 +1420,10 @@ function collide(o,r,y){
   const a=Math.hypot(o.x,o.z);if(a>ARENA){o.x*=ARENA/a;o.z*=ARENA/a}
 }
 const joy={id:null,ox:0,oy:0,x:0,y:0,sprint:false};
+function footstep(){
+  if(hgt(P.x,P.z)<WATER-0.15){SFX.step('water');burst(P.x,WATER+0.03,P.z,3,0xdcefe8,1.4,0.04,0.35,12,1.2);return}
+  SFX.step(Math.max(Math.abs(P.x),Math.abs(P.z))<PYR[0]+0.2||Math.hypot(P.x,P.z)<12?'stone':'leaves');
+}
 function updLook(dt){
   // Average this frame's drag with the last one: removes touch jitter without losing distance.
   const dx=(lookAccX+lookPrevX)/2, dy=(lookAccY+lookPrevY)/2;lookPrevX=lookAccX;lookPrevY=lookAccY;lookAccX=lookAccY=0;
@@ -1426,9 +1437,17 @@ function updLook(dt){
   const speed=Math.hypot(dx,dy)/Math.max(dt,1/120);
   const accel=1+clamp((speed-300)/1500,0,1)*0.8;
   const k=0.0052*accel*(ads?0.55:1)*assistK*sens;
-  P.yaw-=dx*k;P.pitch=clamp(P.pitch-dy*k*0.85,-1.4,1.4);swayX+=dx*0.02;swayY+=dy*0.02;
-  // Right stick: rate-based turning, slower when aiming, slowed further by aim assist.
-  if(pad.lx||pad.ly){const r=sens*(ads?0.5:1)*assistK;P.yaw-=pad.lx*3.4*r*dt;P.pitch=clamp(P.pitch-pad.ly*2.4*r*dt,-1.4,1.4);swayX+=pad.lx*0.6;swayY+=pad.ly*0.6}
+  P.yaw-=dx*k;P.pitch=clamp(P.pitch-dy*k*0.85,-PITCH,PITCH);swayX+=dx*0.02;swayY+=dy*0.02;
+  // Quick 180° turn (double-tap on the look side), eased over a quarter second.
+  if(turnAround>0){const step=Math.min(turnAround,Math.PI*4*dt);P.yaw+=step;turnAround-=step}
+  // Hold your look thumb at the right edge of the screen to keep turning: full 360° without lifting.
+  for(const id in T){const t=T[id];if(t.k!=='look')continue;const W=window.innerWidth,edge=W*0.07;
+    if(t.x>W-edge)P.yaw-=(1-(W-t.x)/edge)*3.2*sens*(ads?0.5:1)*dt;
+    if(t.y<edge*0.8)P.pitch=clamp(P.pitch+(1-t.y/(edge*0.8))*1.4*dt,-PITCH,PITCH);
+    else if(t.y>window.innerHeight-edge*0.8&&t.k==='look'&&!t.fire)P.pitch=clamp(P.pitch-(1-(window.innerHeight-t.y)/(edge*0.8))*1.4*dt,-PITCH,PITCH)}
+  // Right stick: rate-based turning; held at full tilt it speeds up so you can spin around quickly.
+  padHold=Math.hypot(pad.lx,pad.ly)>0.93?padHold+dt:0;const boost=1+clamp((padHold-0.35)/0.5,0,1)*1.3;
+  if(pad.lx||pad.ly){const r=sens*(ads?0.5:1)*assistK;P.yaw-=pad.lx*3.4*r*boost*dt;P.pitch=clamp(P.pitch-pad.ly*2.4*r*dt,-PITCH,PITCH);swayX+=pad.lx*0.6;swayY+=pad.ly*0.6}
 }
 function updPlayer(dt){
   updLook(dt);
@@ -1454,7 +1473,20 @@ function updPlayer(dt){
   shake*=Math.exp(-dt*7);
   const sx=shake>0.01?R(-1,1)*shake*0.12:0,sY=shake>0.01?R(-1,1)*shake*0.12:0;
   camera.position.set(P.x+sx,P.cy+sY-landDip,P.z);
-  camera.rotation.set(clamp(P.pitch+P.kick,-1.45,1.45),P.yaw+(P.kickYaw||0),0);
+  // Head motion: footstep-synced bob and sway, strafe lean, roll into turns, breathing.
+  const hs=Math.hypot(P.vx||0,P.vz||0)*(P.onGround?1:0),stride=P.sprint?2.3:1.7,calm=1-adsT*0.8;
+  const prevPhase=headPhase;headPhase+=hs*dt/stride*Math.PI;
+  if(P.onGround&&hs>0.6&&Math.floor(prevPhase/Math.PI)!==Math.floor(headPhase/Math.PI))footstep();
+  const amp=clamp(hs/7.4,0,1.4)*calm;
+  const bobY=(Math.abs(Math.sin(headPhase))-0.5)*(P.sprint?0.075:0.045)*amp+Math.sin(time*1.6)*0.004*calm;
+  const bobX=Math.sin(headPhase*0.5)*(P.sprint?0.04:0.025)*amp;
+  const dYawH=Math.atan2(Math.sin(P.yaw-headYaw),Math.cos(P.yaw-headYaw));headYaw=P.yaw;
+  headRoll+=((-mx*0.035-clamp(dYawH/Math.max(dt,1e-3),-3,3)*0.012)*calm+bobX*0.35-headRoll)*Math.min(1,dt*8);
+  const rx=Math.cos(P.yaw),rz=-Math.sin(P.yaw);
+  camera.position.set(P.x+sx+rx*bobX,P.cy+sY-landDip+bobY,P.z+rz*bobX);
+  // Eyes hold the target: counter-rotate so the point under the crosshair stays put while the head moves.
+  const gaze=12;
+  camera.rotation.set(clamp(P.pitch+P.kick-bobY/gaze,-PITCH-0.01,PITCH+0.01),P.yaw+(P.kickYaw||0)+bobX/gaze,headRoll);
   // Aim down sights: narrow the field of view.
   const adsGoal=ads&&swT<=0?1:0;adsT+=(adsGoal-adsT)*Math.min(1,dt*14);
   const fov=74-24*adsT+(P.sprint?5:0);if(Math.abs(camera.fov-fov)>0.05){camera.fov+=(fov-camera.fov)*Math.min(1,dt*12);camera.updateProjectionMatrix();wCam.fov=58-12*adsT;wCam.updateProjectionMatrix()}
@@ -1624,6 +1656,25 @@ $('resumeBtn').addEventListener('click',resume);
 $('restartBtn').addEventListener('click',begin);
 function soundLabel(){$('soundBtn').textContent=muted?'SOUND OFF':'SOUND ON'}soundLabel();
 $('soundBtn').addEventListener('click',()=>{muted=!muted;store.set('lionel-muted',muted?'1':'0');if(MG)MG.gain.value=muted?0:0.6;soundLabel()});
+function gyroLabel(t){$('gyroBtn').textContent=t||(gyroOn?'GYRO AIM ON':'GYRO AIM OFF')}
+function onMotion(e){
+  if(!gyroOn||state!=='play'||!e.rotationRate)return;
+  const now=performance.now(),dt=gyroLast?Math.min(0.05,(now-gyroLast)/1000):0;gyroLast=now;if(!dt)return;
+  const r=e.rotationRate,ang=(screen.orientation&&screen.orientation.angle)||window.orientation||0,D=Math.PI/180;
+  let yawR,pitR;
+  if(ang===90){yawR=r.beta;pitR=r.gamma}else if(ang===-90||ang===270){yawR=-r.beta;pitR=-r.gamma}else{yawR=r.gamma;pitR=r.beta}
+  const k=sens*(ads?0.7:1)*1.1;
+  P.yaw+=(yawR||0)*D*dt*k;P.pitch=clamp(P.pitch+(pitR||0)*D*dt*k,-PITCH,PITCH);
+}
+$('gyroBtn').addEventListener('click',async()=>{
+  if(gyroOn){gyroOn=false;gyroLabel();return}
+  if(typeof DeviceMotionEvent==='undefined'){gyroLabel('NO MOTION SENSOR');return}
+  try{
+    if(typeof DeviceMotionEvent.requestPermission==='function'){const res=await DeviceMotionEvent.requestPermission();if(res!=='granted'){gyroLabel('MOTION BLOCKED HERE');return}}
+    window.addEventListener('devicemotion',onMotion);gyroOn=true;gyroLast=0;gyroLabel();
+    setTimeout(()=>{if(gyroOn&&!gyroLast){gyroOn=false;gyroLabel('MOTION BLOCKED HERE')}},1500);
+  }catch(err){gyroLabel('MOTION BLOCKED HERE')}
+});
 function musicLabel(){$('musicBtn').textContent=musicOn?'MUSIC ON':'MUSIC OFF';$('tMusic').textContent=!AC?'PLAY THEME':musicOn?'MUSIC ON':'MUSIC OFF'}musicLabel();
 $('musicBtn').addEventListener('click',()=>{musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0');musicLabel()});
 $('tMusic').addEventListener('click',e=>{e.stopPropagation();if(!AC){musicOn=true;store.set('lionel-music','1');audioInit()}else{audioInit();musicOn=!musicOn;store.set('lionel-music',musicOn?'1':'0')}musicLabel()});
@@ -1637,11 +1688,12 @@ function press(b){
   if(b==='jump')jump();else if(b==='reload')startReload();else if(b==='pause')pauseGame();else if(b==='ads')setAds(!ads);
   else if(b[0]==='w')select(+b.slice(1));
 }
-function lookBy(dx,dy,k){P.yaw-=dx*k*sens;P.pitch=clamp(P.pitch-dy*k*sens,-1.4,1.4);swayX+=dx*0.02;swayY+=dy*0.02}
+function lookBy(dx,dy,k){P.yaw-=dx*k*sens;P.pitch=clamp(P.pitch-dy*k*sens,-PITCH,PITCH);swayX+=dx*0.02;swayY+=dy*0.02}
 function placeJoy(x,y){jb.style.left=x+'px';jb.style.top=y+'px';jb.style.bottom='auto'}
 function restJoy(){placeJoy(Math.max(110,window.innerWidth*0.14),window.innerHeight-Math.max(110,window.innerHeight*0.26));jk.style.transform=''}
 restJoy();window.addEventListener('resize',restJoy);
 const JR=52; // stick radius in px
+let lastLookTap=0,lastTapX=0,lastTapY=0;
 play.addEventListener('touchstart',e=>{
   if(state!=='play')return;e.preventDefault();audioInit();setPadMode(false);
   for(const t of e.changedTouches){
@@ -1649,7 +1701,9 @@ play.addEventListener('touchstart',e=>{
     if(b==='fire'){T[t.identifier]={k:'look',x:t.clientX,y:t.clientY,fire:true,el};fireHeld++;el.classList.add('on')}
     else if(b){T[t.identifier]={k:'btn',el};if(b!=='ads')el.classList.add('on');press(b)}
     else if(t.clientX<window.innerWidth*0.42&&joy.id===null){joy.id=t.identifier;joy.ox=t.clientX;joy.oy=t.clientY;T[t.identifier]={k:'joy'};placeJoy(t.clientX,t.clientY);jb.classList.add('on')}
-    else T[t.identifier]={k:'look',x:t.clientX,y:t.clientY};
+    else{T[t.identifier]={k:'look',x:t.clientX,y:t.clientY};
+      const now=performance.now();if(now-lastLookTap<280&&Math.hypot(t.clientX-lastTapX,t.clientY-lastTapY)<60&&turnAround<=0){turnAround=Math.PI;SPR.rv.y+=4}
+      lastLookTap=now;lastTapX=t.clientX;lastTapY=t.clientY}
   }
 },{passive:false});
 play.addEventListener('touchmove',e=>{
