@@ -1,0 +1,51 @@
+name: Build iPhone app (.ipa)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, unicron_studios_llc/adoring-albattani-e2y382]
+    paths:
+      - "lionel-jungle-fury/**"
+      - "ios/**"
+      - "web-vendor/**"
+      - "tools/build_pages.py"
+      - ".github/workflows/ios-ipa.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bundle the game into the app
+        run: python3 tools/build_pages.py
+
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -project LionelJungleFury.xcodeproj -scheme LionelJungleFury \
+            -configuration Release -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: Package the .ipa
+        working-directory: ios
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/LionelJungleFury.app Payload/
+          test -f Payload/LionelJungleFury.app/www/index.html
+          zip -qry LionelJungleFury.ipa Payload
+          ls -lh LionelJungleFury.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LionelJungleFury-ipa
+          path: ios/LionelJungleFury.ipa

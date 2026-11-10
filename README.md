@@ -15,3 +15,8 @@ A first-person jungle shooter. Lionel holds the Temple of the Golden Jaguar with
 To publish it: on GitHub, open **Settings → Pages**, set **Source** to *Deploy from a branch*, choose this branch and the **/docs** folder, then **Save**. The game appears at `https://dookdog.github.io/everysingleday/`.
 
 After changing `lionel-jungle-fury/index.html`, rebuild the copy with `python3 tools/build_pages.py`.
+
+### Install it on the iPhone
+
+- **Home-screen app, nothing else needed.** Once Pages is on, open the address above in Safari and tap **Share → Add to Home Screen**. You get a "Lionel" icon that opens full-screen and works offline.
+- **Native app (.ipa).** `ios/` is an iPhone app with the game bundled inside. GitHub builds an unsigned `LionelJungleFury.ipa` on every push (Actions tab → "Build iPhone app (.ipa)" → artifact). iOS only installs signed apps, so it must be signed with your Apple ID first; see `ios/README.md`.
