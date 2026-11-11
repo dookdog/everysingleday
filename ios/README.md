@@ -29,6 +29,29 @@ After installing, on the iPhone: Settings → General → VPN & Device Managemen
 
 With a free Apple ID the app works for 7 days and then needs re-signing. A paid Apple Developer account ($99/year) makes that one year and allows TestFlight.
 
+### 3. One-tap install from the phone (needs a paid Apple Developer account)
+
+The GitHub build signs the app by itself when the repository has your signing files. After that, opening `https://dookdog.github.io/everysingleday/install.html` on the iPhone and tapping **Install** puts the app on the home screen with no computer.
+
+One-time setup:
+
+1. In your Apple Developer account, register the iPhone (its UDID), create an **App ID**, an **Apple Distribution** certificate and an **Ad Hoc** provisioning profile that includes the iPhone.
+2. Export the certificate with its private key as a `.p12` file (Keychain Access → export) and download the `.mobileprovision` profile.
+3. Turn each file into text: `base64 -i cert.p12 | pbcopy` and `base64 -i profile.mobileprovision | pbcopy`.
+4. On GitHub: **Settings → Secrets and variables → Actions → New repository secret**. Add:
+   - `IOS_P12_BASE64` — the certificate text
+   - `IOS_P12_PASSWORD` — the password you chose when exporting
+   - `IOS_PROFILE_BASE64` — the profile text
+5. Re-run the "Build iPhone app (.ipa)" workflow (Actions tab → Run workflow).
+
+The app takes the bundle identifier from your profile. Keep these files private: put them only into GitHub's secrets form, never into the repository or a chat.
+
+This signing step has not been exercised yet, because it needs your certificate.
+
+## Automated simulator run
+
+Every build also launches the app in an iPhone simulator on GitHub's Mac, starts a game, and saves two screenshots (`title.png`, `playing.png`) to the build's artifacts and to the `ipa-latest` release. The build fails if the game page reports an error or does not start.
+
 ## Build it yourself on a Mac
 
 ```
@@ -52,4 +75,4 @@ In Xcode, select the target → Signing & Capabilities → pick your team, then 
 
 ## Testing status
 
-The Swift code was written without a Mac. The GitHub build is the first real compile; check the Actions tab for its result. The app has not been run on a physical iPhone.
+The app is compiled and launched in an iPhone simulator on every GitHub build. It has not been run on a physical iPhone, and the signing step is untested.

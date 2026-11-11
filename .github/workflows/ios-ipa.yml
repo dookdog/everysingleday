@@ -17,6 +17,10 @@ permissions:
 jobs:
   ipa:
     runs-on: macos-latest
+    env:
+      # Signing is optional. Add these repository secrets to get a signed, installable .ipa:
+      #   IOS_P12_BASE64, IOS_P12_PASSWORD, IOS_PROFILE_BASE64   (see ios/README.md)
+      HAS_SIGNING: ${{ secrets.IOS_P12_BASE64 != '' && secrets.IOS_PROFILE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -45,6 +49,52 @@ jobs:
           test -f Payload/LionelJungleFury.app/www/vendor/three.min.js
           test -x Payload/LionelJungleFury.app/LionelJungleFury
           plutil -lint Payload/LionelJungleFury.app/Info.plist
+
+      - name: Sign with your Apple certificate (only when the signing secrets are set)
+        if: env.HAS_SIGNING == 'true'
+        working-directory: ios
+        env:
+          P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          APP=Payload/LionelJungleFury.app
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk 'NR==1{print $2}')"
+          test -n "$IDENTITY"
+
+          # Read the provisioning profile: its entitlements and the app id it allows.
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$RUNNER_TEMP/profile.plist" > "$RUNNER_TEMP/entitlements.plist"
+          APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")"
+          BUNDLE_ID="${APP_ID#*.}"
+          if [ "$BUNDLE_ID" != "*" ] && [ "${BUNDLE_ID%\*}" = "$BUNDLE_ID" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Info.plist"
+          fi
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$APP/embedded.mobileprovision"
+          codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --entitlements "$RUNNER_TEMP/entitlements.plist" --timestamp=none "$APP"
+          codesign --verify --verbose "$APP"
+          security delete-keychain "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/profile.mobileprovision"
+
+          # Manifest for one-tap install from the phone (docs/install.html).
+          FINAL_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+          sed "s/BUNDLE_ID/$FINAL_ID/" install-manifest.template.plist > manifest.plist
+          plutil -lint manifest.plist
+
+      - name: Zip the .ipa
+        working-directory: ios
+        run: |
           zip -qry LionelJungleFury.ipa Payload
           ls -lh LionelJungleFury.ipa
 
@@ -62,3 +112,57 @@ jobs:
             --target "$GITHUB_SHA" --title "Lionel: Jungle Fury (unsigned iPhone app)" \
             --notes "Unsigned .ipa, rebuilt on every push. iOS only installs signed apps: sign and install it with Sideloadly or AltStore using your Apple ID. See ios/README.md."
           gh release upload ipa-latest ios/LionelJungleFury.ipa --clobber
+          if [ -f ios/manifest.plist ]; then
+            gh release upload ipa-latest ios/manifest.plist --clobber
+            gh release edit ipa-latest --title "Lionel: Jungle Fury (signed iPhone app)" --notes "Signed .ipa, rebuilt on every push. On a registered iPhone, open the install page (docs/install.html on GitHub Pages) and tap Install."
+          fi
+
+  # Launches the app in an iPhone simulator, starts a game and saves a screenshot.
+  simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Bundle the game into the app
+        run: python3 tools/build_pages.py
+      - name: Build for the simulator
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project LionelJungleFury.xcodeproj -scheme LionelJungleFury \
+            -configuration Debug -sdk iphonesimulator -derivedDataPath build \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - name: Launch and play
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          UDID="$(xcrun simctl list devices available | grep -E '^ +iPhone' | head -1 | grep -oE '[0-9A-F-]{36}')"
+          echo "Simulator: $(xcrun simctl list devices available | grep "$UDID")"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/LionelJungleFury.app
+          xcrun simctl spawn "$UDID" log stream --level debug --predicate 'eventMessage CONTAINS "SELFTEST"' > selftest.log &
+          sleep 3
+          xcrun simctl launch "$UDID" com.lioneljunglefury.game -selftest YES
+          sleep 12
+          xcrun simctl io "$UDID" screenshot title.png
+          sleep 30
+          xcrun simctl io "$UDID" screenshot playing.png
+          cat selftest.log
+          grep -q 'SELFTEST RESULT' selftest.log
+          grep 'SELFTEST RESULT' selftest.log | grep -q 'three.*true.*cannon.*true.*canvas.*true.*playing.*true'
+          ! grep -q 'JS ERROR' selftest.log
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: simulator-screenshots
+          path: |
+            ios/*.png
+            ios/selftest.log
+      - name: Attach the screenshots to the release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ipa-latest >/dev/null 2>&1 || exit 0
+          for f in ios/title.png ios/playing.png ios/selftest.log; do [ -f "$f" ] && gh release upload ipa-latest "$f" --clobber; done; true
