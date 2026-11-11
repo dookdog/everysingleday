@@ -16,7 +16,11 @@ You get a "Lionel" icon that opens full-screen and works offline after the first
 
 ### 2. The real .ipa (needs a computer and a free Apple ID)
 
-Every push builds an unsigned `LionelJungleFury.ipa` on GitHub's Macs. To get it: open the repository's **Actions** tab, open the latest "Build iPhone app (.ipa)" run, and download the `LionelJungleFury-ipa` artifact (a zip containing the `.ipa`). Then sign and install it with one of:
+Every push builds an unsigned `LionelJungleFury.ipa` on GitHub's Macs. Download it directly:
+
+`https://github.com/dookdog/everysingleday/releases/download/ipa-latest/LionelJungleFury.ipa`
+
+(The same file is also in each build's **Artifacts** on the Actions tab, wrapped in a zip.) Then sign and install it with one of:
 
 - **Sideloadly** (Windows or Mac): drag the `.ipa` in, enter your Apple ID, connect the iPhone, press Start.
 - **AltStore**: install AltStore on the phone, then open the `.ipa` with it.

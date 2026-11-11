@@ -12,13 +12,13 @@ on:
       - ".github/workflows/ios-ipa.yml"
 
 permissions:
-  contents: read
+  contents: write   # to attach the .ipa to a release
 
 jobs:
   ipa:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Bundle the game into the app
         run: python3 tools/build_pages.py
@@ -42,10 +42,23 @@ jobs:
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/LionelJungleFury.app Payload/
           test -f Payload/LionelJungleFury.app/www/index.html
+          test -f Payload/LionelJungleFury.app/www/vendor/three.min.js
+          test -x Payload/LionelJungleFury.app/LionelJungleFury
+          plutil -lint Payload/LionelJungleFury.app/Info.plist
           zip -qry LionelJungleFury.ipa Payload
           ls -lh LionelJungleFury.ipa
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: LionelJungleFury-ipa
           path: ios/LionelJungleFury.ipa
+
+      # A release gives a direct LionelJungleFury.ipa download (the artifact above is zip-wrapped).
+      - name: Attach the .ipa to the "ipa-latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ipa-latest >/dev/null 2>&1 || gh release create ipa-latest --prerelease \
+            --target "$GITHUB_SHA" --title "Lionel: Jungle Fury (unsigned iPhone app)" \
+            --notes "Unsigned .ipa, rebuilt on every push. iOS only installs signed apps: sign and install it with Sideloadly or AltStore using your Apple ID. See ios/README.md."
+          gh release upload ipa-latest ios/LionelJungleFury.ipa --clobber
